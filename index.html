@@ -236,6 +236,8 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .flash{animation:nope .4s}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
+<script src="vendor/peerjs.min.js"></script>
+<script src="js/net.js"></script>
 </head>
 <body>
 
@@ -287,9 +289,13 @@ const store = {
   get(k, d){ try{ const v=localStorage.getItem('shuffle:'+k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem('shuffle:'+k, JSON.stringify(v)); }catch(e){} }
 };
-// The page's live room (online play). Resolves to null outside claude.ai or when it can't connect.
+// Online play. Uses direct peer-to-peer tables (js/net.js); falls back to the claude.ai live room
+// when the page runs as an artifact there. Resolves to null when neither is available.
 let roomP = null;
-const getRoom = () => roomP || (roomP = (window.claude && window.claude.use) ? window.claude.use('room').catch(() => null) : Promise.resolve(null));
+const getRoom = () => roomP || (roomP =
+  (window.ShuffleNet && window.ShuffleNet.available()) ? Promise.resolve(window.ShuffleNet)
+  : (window.claude && window.claude.use) ? window.claude.use('room').catch(() => null)
+  : Promise.resolve(null));
 
 // ---------- Games ----------
 const GAMES = {
@@ -435,7 +441,7 @@ function Speed(root, ui){
     input.addEventListener('keydown', e => { if(e.key==='Enter') joinGame(input.value); });
     modes.append(cpu, local, online); wrap.appendChild(modes);
     ui.status('Pick a mode to deal in.');
-    getRoom().then(r => { room=r; if(!r){ host.disabled=join.disabled=input.disabled=true; onote.textContent='Online play needs this page open on claude.ai, shared with your friend.'; } });
+    getRoom().then(r => { room=r; if(!r){ host.disabled=join.disabled=input.disabled=true; onote.textContent='Online play could not load. Check your connection and reopen Speed.'; } });
   }
 
   // ----- local + host game loop -----
@@ -559,8 +565,14 @@ function Speed(root, ui){
   // ----- online -----
   async function hostGame(){
     room = room || await getRoom(); if(!room) return;
-    const code = Array.from({length:4}, () => 'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
-    let r; try{ r = await room.join('speed-' + code.toLowerCase()); }catch(e){ ui.status('Could not open a table right now. Try again in a moment.'); return; }
+    ui.status('Opening a table…');
+    const newCode = () => Array.from({length:4}, () => 'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+    let r=null, code='';
+    for(let tries=0; tries<3 && !r; tries++){ // a code can already be taken; draw another
+      code = newCode();
+      try{ r = await room.join('speed-' + code.toLowerCase(), {role:'host'}); }catch(e){ r=null; }
+    }
+    if(!r){ ui.status('Could not open a table right now. Check your connection and try again.'); return; }
     stop(); mode='host'; net={role:'host', code, room:r, guestPeer:null, unsubs:[]};
     wrap.innerHTML=''; const box=h('div','sp-over');
     box.innerHTML=`<p class="label" style="color:#3b3546">Your table code</p><div class="code">${code}</div><p>Tell your friend to open this page, choose Speed, then join with this code. The game starts as soon as they arrive.</p>`;
@@ -585,7 +597,8 @@ function Speed(root, ui){
     const code = String(raw||'').trim().toUpperCase().replace(/[^A-Z]/g,'');
     if(code.length!==4){ ui.status('Table codes are 4 letters.'); return; }
     room = room || await getRoom(); if(!room) return;
-    let r; try{ r = await room.join('speed-' + code.toLowerCase()); }catch(e){ ui.status('Could not reach that table. Check the code and try again.'); return; }
+    ui.status('Looking for table ' + code + '…');
+    let r; try{ r = await room.join('speed-' + code.toLowerCase(), {role:'guest'}); }catch(e){ ui.status('Could not reach that table. Check the code, and make sure your friend is still on the code screen.'); return; }
     stop(); mode='guest'; net={role:'guest', code, room:r, unsubs:[]}; lastTops=[null,null]; bindKeys();
     wrap.innerHTML=''; const box=h('div','sp-over'); box.innerHTML=`<div class="code">${code}</div><p>Joined. Waiting for the host to deal…</p>`; wrap.appendChild(box);
     ui.status('Connecting to table ' + code + '…');
