@@ -72,6 +72,15 @@ h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;text-transform:up
 .gcard.hero p{color:var(--ink)}
 .gcard.hero .tag{background:var(--butter)}
 .note{color:var(--muted);font-size:13px;margin:0;text-align:center}
+/* Install ticket: a torn-stub strip under the spread, only shown when the browser can install */
+.ticket{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;justify-content:space-between;margin:20px auto 0;max-width:560px;
+  background:var(--ink);color:var(--paper);border:var(--line);border-radius:14px;padding:12px 14px 12px 18px;box-shadow:4px 4px 0 var(--tomato);
+  -webkit-mask:radial-gradient(circle 9px at 0 50%, #0000 98%, #000) left/51% 100% no-repeat, radial-gradient(circle 9px at 100% 50%, #0000 98%, #000) right/51% 100% no-repeat}
+.ticket[hidden]{display:none}
+.ticket b{font-family:var(--display);font-size:22px;font-weight:900;text-transform:uppercase;color:var(--butter);letter-spacing:.02em;display:block;line-height:1}
+.ticket span{font-size:13px;color:var(--muted)}
+.ticket .row{display:flex;gap:8px;align-items:center}
+.ticket .x{background:none;border:0;color:var(--muted);font-size:13px;text-decoration:underline;padding:6px}
 
 /* Game chrome */
 .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -249,7 +258,11 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 
   <main id="menu">
     <div class="spread" id="tiles"></div>
-    <p class="note" style="margin-top:18px">Prototype build · scores and bankroll are saved in this browser only</p>
+    <div class="ticket" id="install" hidden>
+      <div><b>Take the table with you</b><span id="installhow">Add Shuffle Club to your home screen. It opens full screen and works offline.</span></div>
+      <div class="row"><button class="btn primary" id="installbtn">Install</button><button class="x" id="installno">Not now</button></div>
+    </div>
+    <p class="note" style="margin-top:18px">Scores and bankroll are saved on this device only</p>
   </main>
 
   <main id="game" hidden>
@@ -1393,5 +1406,27 @@ buildMenu(); route();
 if('serviceWorker' in navigator && location.protocol !== 'file:'){
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
+// Install ticket. Chrome/Edge/Android fire beforeinstallprompt; iPhone and iPad need Share > Add to Home Screen.
+(() => {
+  const box = document.getElementById('install'), btn = document.getElementById('installbtn');
+  const how = document.getElementById('installhow'), no = document.getElementById('installno');
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let dismissed = false; try{ dismissed = localStorage.getItem('shuffle:installNo') === '1'; }catch(e){}
+  if(standalone || dismissed) return;
+  let deferred = null;
+  no.addEventListener('click', () => { box.hidden = true; try{ localStorage.setItem('shuffle:installNo','1'); }catch(e){} });
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; box.hidden = false; });
+  window.addEventListener('appinstalled', () => { box.hidden = true; deferred = null; });
+  btn.addEventListener('click', async () => {
+    if(!deferred) return;
+    deferred.prompt(); const r = await deferred.userChoice.catch(() => null); deferred = null;
+    if(r && r.outcome === 'accepted') box.hidden = true;
+  });
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(ios){
+    how.innerHTML = 'Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. It opens full screen and works offline.';
+    btn.hidden = true; box.hidden = false;
+  }
+})();
 </script>
 </body></html>
