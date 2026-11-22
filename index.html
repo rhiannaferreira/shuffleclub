@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shuffle Club</title>
-<meta name="description" content="Nine card games on one table. Race the computer, pass the phone, or play a friend online.">
+<meta name="description" content="Ten card games on one table. Race the computer, pass the phone, or play a friend online.">
 <meta name="theme-color" content="#2443d6">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -239,6 +239,16 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .rat-pile{position:relative;width:calc(var(--cw) * 1.9);height:calc(var(--cw) * 1.55);cursor:pointer;touch-action:manipulation}
 .rat-pile .slot{margin:0 auto}
 .rat .land{animation:land .2s cubic-bezier(.3,1.7,.6,1)}
+
+/* ---------- Gin Rummy ---------- */
+.gin{--cw:min(68px, 16vw);display:flex;flex-direction:column;gap:16px;align-items:center}
+.gin-hand{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 14px;min-height:calc(var(--cw) * 1.4)}
+.gin-group{display:flex;padding:4px;border-radius:12px}
+.gin-group .card + .card{margin-left:calc(var(--cw) * -.48)}
+.gin-group.meld{background:var(--butter);border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink)}
+.gin-group.dead{background:#15131c40;border:2px dashed #ffffff55}
+.gin .live{box-shadow:0 0 0 3px var(--butter), 3px 4px 0 var(--ink)}
+.gin .card.sel{transform:translateY(-12px)}
 @keyframes land{from{transform:scale(1.35) rotate(-8deg)}to{transform:scale(1.04)}}
 @keyframes bang{from{transform:scale(.4) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes nope{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
@@ -253,7 +263,7 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 <div class="wrap">
   <header class="mast" id="mast">
     <h1>Shuffle Club</h1>
-    <p>Nine card games on one table. Race the computer, pass the phone, or play a friend online.</p>
+    <p>Ten card games on one table. Race the computer, pass the phone, or play a friend online.</p>
   </header>
 
   <main id="menu">
@@ -321,6 +331,9 @@ const GAMES = {
   ratscrew: { name:'Ratscrew', glyph:'SLAP', red:false, players:'Real-time · you vs computer', blurb:'Flip, fight with face cards, slap doubles and sandwiches.',
     rules:`<p>Take turns flipping your top card onto the pile. When someone flips a face card or Ace, the other player gets 1 chance for a Jack, 2 for a Queen, 3 for a King or 4 for an Ace to flip a face card of their own. If they can't, the face-card player takes the pile.</p><p>Anyone can slap the pile at any time when the top two cards match (a double) or the top and third cards match (a sandwich). First slap takes the pile. A wrong slap costs you a card. Win by holding all 52.</p><p>Keys: Enter flips, Space slaps.</p>`,
     make: Ratscrew },
+  gin: { name:'Gin Rummy', glyph:'GIN', red:true, players:'You vs computer · to 100', blurb:'Draw, discard and build sets and runs. Knock low or go gin.',
+    rules:`<p>You each get 10 cards. On your turn, draw from the deck or take the top discard, then throw one card away. Build melds: sets of 3 or 4 of the same rank, or runs of 3+ in one suit (Ace is low). Cards not in a meld are deadwood: Aces 1, number cards face value, faces 10.</p><p>Once your deadwood is 10 or less you can knock to end the hand. Your opponent can lay off cards onto your melds. Lower deadwood scores the difference. If they tie or beat you, that's an undercut and they get a 25 bonus. Knock with zero deadwood for gin: 25 plus their deadwood, no lay-offs. First to 100 wins.</p><p>Your hand groups itself: yellow trays are melds, the dashed tray is deadwood.</p>`,
+    make: Gin },
   klondike: { name:'Klondike', glyph:'A–K', players:'Solo patience', blurb:'Build four suits from Ace to King.',
     rules:`<p>Move cards between the seven columns in descending order, alternating red and black. Only a King can fill an empty column. Build each foundation (top right) up by suit from Ace to King.</p><p>Tap a card to pick it up, then tap where it should go. Tap a picked-up card again to send it to a foundation. Tap the deck to turn over a card; when it runs out, tap again to recycle.</p>`,
     make: Klondike },
@@ -1396,6 +1409,201 @@ function Ratscrew(root, ui){
     ui.status(msg);
   }
   return { newGame, stop(){ clear(); if(keyH){ window.removeEventListener('keydown', keyH); keyH=null; } } };
+}
+
+// ======================= GIN RUMMY =======================
+const ginVal = c => Math.min(10, c.r);
+function ginMelds(cards){
+  const out = [], n = cards.length;
+  // sets: 3 or 4 of a rank
+  const byRank = {};
+  cards.forEach((c,i) => (byRank[c.r] = byRank[c.r] || []).push(i));
+  Object.values(byRank).forEach(ix => {
+    if(ix.length>=3){ if(ix.length===4){ out.push(ix.slice()); for(let k=0;k<4;k++) out.push(ix.filter((_,j)=>j!==k)); } else out.push(ix.slice()); }
+  });
+  // runs: 3+ in a row, same suit, Ace low
+  for(const s of SUITS){
+    const ix = cards.map((c,i)=>i).filter(i=>cards[i].s===s).sort((a,b)=>cards[a].r-cards[b].r);
+    for(let a=0;a<ix.length;a++){
+      let run=[ix[a]];
+      for(let b=a+1;b<ix.length && cards[ix[b]].r===cards[run[run.length-1]].r+1;b++){ run.push(ix[b]); if(run.length>=3) out.push(run.slice()); }
+    }
+  }
+  return out.map(m => ({m, mask:m.reduce((a,i)=>a|(1<<i),0)}));
+}
+function ginAnalyze(cards){
+  const n=cards.length, ms=ginMelds(cards); let best=null;
+  const rec = (decided, dw, chosen) => {
+    if(best && dw>=best.dw) return;
+    let i=0; while(i<n && (decided>>i)&1) i++;
+    if(i===n){ best={dw, melds:chosen.slice()}; return; }
+    for(const x of ms) if(((x.mask>>i)&1) && !(x.mask&decided)){ chosen.push(x.m); rec(decided|x.mask, dw, chosen); chosen.pop(); }
+    rec(decided|(1<<i), dw+ginVal(cards[i]), chosen);
+  };
+  rec(0,0,[]);
+  const used = new Set(best.melds.flat());
+  best.dead = cards.map((_,i)=>i).filter(i=>!used.has(i));
+  return best;
+}
+// For an 11-card hand: which card to throw to leave the least deadwood.
+function ginBestDiscard(hand, banned){
+  let best=null;
+  hand.forEach((c,i) => {
+    if(banned && c===banned) return;
+    const a = ginAnalyze(hand.filter((_,j)=>j!==i));
+    if(!best || a.dw<best.dw || (a.dw===best.dw && ginVal(c)>ginVal(hand[best.i]))) best={i, dw:a.dw};
+  });
+  return best;
+}
+
+function Gin(root, ui){
+  const wrap = h('div','gin'); root.appendChild(wrap);
+  const TARGET = 100;
+  let H, stock, discard, turn, phase, sel, took, score, msg, timer, starter, result, handNo;
+  const later = (fn,ms) => { clearTimeout(timer); timer=setTimeout(fn,ms); };
+  const sortHand = hand => hand.sort((a,b)=> SUITS.indexOf(a.s)-SUITS.indexOf(b.s) || a.r-b.r);
+  function newGame(){ clearTimeout(timer); score=[0,0]; starter=0; handNo=0; deal(); }
+  function deal(){
+    const d = shuffle(makeDeck()).map(c=>({...c, up:true}));
+    H = [d.splice(0,10), d.splice(0,10)]; sortHand(H[0]);
+    discard=[d.pop()]; stock=d; sel=null; took=null; result=null; handNo++;
+    turn=starter; phase = turn===0 ? 'draw' : 'cpu';
+    msg = turn===0 ? 'Your turn. Draw from the deck or take the top discard.' : '';
+    render(); if(turn===1) later(cpu, 900);
+  }
+  function draw(from){
+    if(turn!==0 || phase!=='draw') return;
+    if(from==='stock'){ if(stock.length<=2) return endDraw(); const c=stock.pop(); H[0].push(c); took=null; msg=`You drew the ${rankLabel(c.r)}${c.s}. Pick a card to discard, or knock.`; }
+    else { const c=discard.pop(); H[0].push(c); took=c; msg=`You took the ${rankLabel(c.r)}${c.s}. Pick a card to discard, or knock.`; }
+    sortHand(H[0]); phase='discard'; sel=null; render();
+  }
+  function select(i){ if(turn!==0 || phase!=='discard') return; if(H[0][i]===took){ msg="You can't throw back the card you just picked up."; return render(); } sel = sel===i ? null : i; render(); }
+  function doDiscard(knock){
+    if(sel==null) return;
+    const c = H[0].splice(sel,1)[0]; sel=null;
+    if(knock){ const a=ginAnalyze(H[0]); if(a.dw>10){ H[0].push(c); sortHand(H[0]); return; } discard.push(c); return showdown(0); }
+    discard.push(c); took=null;
+    if(stock.length<=2) return endDraw();
+    turn=1; phase='cpu'; render(); later(cpu, 800);
+  }
+  function cpu(){
+    const me=H[1], top=discard[discard.length-1];
+    const now = ginAnalyze(me).dw;
+    const withTop = ginBestDiscard([...me, top], top);
+    let from='stock';
+    if(withTop.dw < now - 2 || ginMelds([...me, top]).some(x => x.m.includes(me.length))) from='discard';
+    let c;
+    if(from==='discard'){ c=discard.pop(); took=c; } else { if(stock.length<=2) return endDraw(); c=stock.pop(); took=null; }
+    me.push(c);
+    const pick = ginBestDiscard(me, took);
+    const thrown = me.splice(pick.i,1)[0]; discard.push(thrown);
+    const what = from==='discard' ? `took your ${rankLabel(c.r)}${c.s}` : 'drew from the deck';
+    const turnsIn = 20 - stock.length/2;
+    if(pick.dw===0 || (pick.dw<=10 && (pick.dw<=5 || turnsIn>8))){ msg=`Computer ${what} and threw the ${rankLabel(thrown.r)}${thrown.s}.`; took=null; return showdown(1); }
+    took=null;
+    if(stock.length<=2) return endDraw();
+    msg = `Computer ${what} and threw the ${rankLabel(thrown.r)}${thrown.s}. Your turn.`;
+    turn=0; phase='draw'; render();
+  }
+  function endDraw(){ phase='over'; result={draw:true}; msg='The deck ran down to two cards, so this hand is a wash. No points.'; render(); }
+  function showdown(k){
+    const d = 1-k;
+    const ka = ginAnalyze(H[k]), da = ginAnalyze(H[d]);
+    const kMelds = ka.melds.map(m => m.map(i=>H[k][i]));
+    let dDead = da.dead.map(i=>H[d][i]), laid=[];
+    const gin = ka.dw===0;
+    if(!gin){
+      let changed=true;
+      while(changed){ changed=false;
+        for(const c of dDead.slice()){
+          for(const m of kMelds){
+            const isSet = m.every(x=>x.r===m[0].r);
+            const rs = m.map(x=>x.r);
+            const fits = isSet ? (m.length<4 && c.r===m[0].r) : (c.s===m[0].s && (c.r===Math.min(...rs)-1 || c.r===Math.max(...rs)+1));
+            if(fits){ m.push(c); laid.push(c); dDead.splice(dDead.indexOf(c),1); changed=true; break; }
+          }
+        }
+      }
+    }
+    const dDw = dDead.reduce((s,c)=>s+ginVal(c),0);
+    let winner, pts, why;
+    if(gin){ winner=k; pts=25+dDw; why='Gin! 25 bonus plus the other hand\'s deadwood'; }
+    else if(ka.dw < dDw){ winner=k; pts=dDw-ka.dw; why=`Knock with ${ka.dw} against ${dDw} deadwood`; }
+    else { winner=d; pts=ka.dw-dDw+25; why=`Undercut! ${dDw} deadwood beat the knock of ${ka.dw}, plus a 25 bonus`; }
+    score[winner]+=pts; starter = winner;
+    result = {k, gin, winner, pts, why, laid, melds:[kMelds, da.melds.map(m=>m.map(i=>H[d][i]))], dead:[ka.dead.map(i=>H[k][i]), dDead]};
+    phase='over';
+    const who = winner===0 ? 'You score' : 'Computer scores';
+    msg = `<span class="${winner===0?'win':'lose'}">${who} ${pts}.</span> ${why}.`;
+    render();
+  }
+  function groupsFor(hand){
+    const a = ginAnalyze(hand);
+    return { a, groups:[...a.melds.map(m => ({meld:true, idx:m.slice().sort((x,y)=>hand[x].r-hand[y].r)})), {meld:false, idx:a.dead}] };
+  }
+  function fan(cards, opts={}){
+    const g = h('div','gin-group' + (opts.meld ? ' meld':'' ) + (opts.cls ? ' '+opts.cls:''));
+    cards.forEach(c => g.appendChild(cardEl(c, true)));
+    return g;
+  }
+  function render(){
+    wrap.innerHTML='';
+    const top = h('div','seat');
+    top.appendChild(h('div','label', `Computer · ${score[1]} points`));
+    if(phase==='over' && result && !result.draw){
+      const k=result.k, melds = k===1 ? result.melds[0] : result.melds[1], dead = k===1 ? result.dead[0] : result.dead[1];
+      const row=h('div','gin-hand'); melds.forEach(m=>row.appendChild(fan(m,{meld:true}))); if(dead.length) row.appendChild(fan(dead,{cls:'dead'})); top.appendChild(row);
+    } else { const row=h('div','hand overlap'); H[1].forEach(()=>row.appendChild(cardEl({},false))); top.appendChild(row); }
+    wrap.appendChild(top);
+    const mid=h('div','mid');
+    const st = stock.length ? cardEl({},false) : h('div','slot');
+    if(turn===0 && phase==='draw'){ st.classList.add('can','live'); st.setAttribute('role','button'); st.setAttribute('aria-label','Draw from the deck'); st.addEventListener('click',()=>draw('stock')); }
+    const dc = discard.length ? cardEl(discard[discard.length-1]) : h('div','slot');
+    if(turn===0 && phase==='draw' && discard.length){ dc.classList.add('can','live'); dc.setAttribute('role','button'); dc.setAttribute('aria-label','Take the discard'); dc.addEventListener('click',()=>draw('discard')); }
+    const col=(el,label)=>{ const s=h('div','seat'); s.style.width='auto'; s.append(el, h('div','label',label)); return s; };
+    mid.append(col(st, `Deck · ${stock.length}`), col(dc,'Discard'));
+    wrap.appendChild(mid);
+    // your hand, grouped into melds + deadwood
+    const me=h('div','seat');
+    let dwText='';
+    if(phase==='over' && result && !result.draw){
+      const k=result.k, melds = k===0 ? result.melds[0] : result.melds[1], dead = k===0 ? result.dead[0] : result.dead[1];
+      const row=h('div','gin-hand'); melds.forEach(m=>row.appendChild(fan(m,{meld:true}))); if(dead.length) row.appendChild(fan(dead,{cls:'dead'})); me.appendChild(row);
+      if(result.laid.length) me.appendChild(h('div','label', `Laid off: ${result.laid.map(c=>rankLabel(c.r)+c.s).join(' ')}`));
+    } else {
+      const {a, groups} = groupsFor(H[0]);
+      const row=h('div','gin-hand');
+      groups.forEach(gp => {
+        if(!gp.idx.length) return;
+        const g=h('div','gin-group' + (gp.meld?' meld':' dead'));
+        gp.idx.forEach(i => { const el=cardEl(H[0][i]); if(phase==='discard' && turn===0){ el.classList.add('can'); if(H[0][i]===took) el.classList.add('dim'); el.setAttribute('role','button'); el.tabIndex=0;
+          el.addEventListener('click',()=>select(i)); el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); select(i);} }); }
+          if(sel===i) el.classList.add('sel'); g.appendChild(el); });
+        row.appendChild(g);
+      });
+      me.appendChild(row);
+      dwText = H[0].length===10 ? `Deadwood ${a.dw}` : '';
+    }
+    me.appendChild(h('div','label', `You · ${score[0]} points${dwText ? ' · '+dwText : ''}`));
+    wrap.appendChild(me);
+    const ctr=h('div','controls');
+    if(phase==='discard' && turn===0){
+      const after = sel!=null ? ginAnalyze(H[0].filter((_,j)=>j!==sel)).dw : null;
+      const d=h('button','btn primary', sel==null ? 'Pick a card to discard' : `Discard ${rankLabel(H[0][sel].r)}${H[0][sel].s}`); d.disabled = sel==null; d.addEventListener('click',()=>doDiscard(false));
+      const k=h('button','btn hot', after===0 ? 'Go gin!' : `Knock${after!=null ? ` (${after} deadwood)` : ''}`); k.disabled = after==null || after>10; k.addEventListener('click',()=>doDiscard(true));
+      ctr.append(d,k);
+    }
+    if(phase==='over'){
+      if(score[0]>=TARGET || score[1]>=TARGET){
+        const box=h('div','sp-over'); const won=score[0]>score[1];
+        box.innerHTML=`<h3>${won?'You win':'Computer wins'}</h3><p>Final score ${score[0]} to ${score[1]} after ${handNo} hands.</p>`;
+        const b=h('button','btn primary big','New game'); b.addEventListener('click',newGame); box.appendChild(b); wrap.appendChild(box);
+      } else { const b=h('button','btn primary big','Next hand'); b.addEventListener('click',deal); ctr.appendChild(b); }
+    }
+    wrap.appendChild(ctr);
+    ui.status(phase==='cpu' ? 'Computer is thinking…' : msg + ` <span class="label" style="margin-left:auto">First to ${TARGET}</span>`);
+  }
+  return { newGame, stop(){ clearTimeout(timer); } };
 }
 
 buildMenu(); route();

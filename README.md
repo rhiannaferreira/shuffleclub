@@ -1,6 +1,6 @@
 # Shuffle Club
 
-Nine card games on one table: Speed, Texas Hold'em, Ratscrew, Six-Card Golf, Klondike, Blackjack, Crazy Eights, War and Memory.
+Ten card games on one table: Speed, Texas Hold'em, Ratscrew, Six-Card Golf, Gin Rummy, Klondike, Blackjack, Crazy Eights, War and Memory.
 
 **Play:** https://shuffleclub.vercel.app
 

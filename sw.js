@@ -1,6 +1,6 @@
 // Shuffle Club service worker: keeps the table playable offline.
 // Bump VERSION whenever a shipped file changes so phones pick up the new build.
-const VERSION = 'sc-v1';
+const VERSION = 'sc-v2';
 const SHELL = [
   './',
   'index.html',
