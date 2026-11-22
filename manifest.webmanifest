@@ -1,0 +1,23 @@
+{
+  "name": "Shuffle Club",
+  "short_name": "Shuffle Club",
+  "description": "Nine card games on one table. Race the computer, pass the phone, or play a friend online.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2443d6",
+  "theme_color": "#2443d6",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Speed", "url": "./#speed", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Texas Hold'em", "url": "./#holdem", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

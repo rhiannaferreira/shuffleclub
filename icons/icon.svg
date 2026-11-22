@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="11" cy="11" r="3.2" fill="#3a58ec"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="#2443d6"/>
+  <rect width="512" height="512" fill="url(#dots)"/>
+  <!-- back card -->
+  <g transform="rotate(-14 256 270)">
+    <rect x="150" y="118" width="196" height="276" rx="26" fill="#15131c" transform="translate(12 12)"/>
+    <rect x="150" y="118" width="196" height="276" rx="26" fill="#ff4b2b" stroke="#15131c" stroke-width="10"/>
+    <rect x="172" y="140" width="152" height="232" rx="14" fill="none" stroke="#ffd23f" stroke-width="8" stroke-dasharray="2 14" stroke-linecap="round"/>
+  </g>
+  <!-- front card -->
+  <g transform="rotate(9 256 270)">
+    <rect x="170" y="112" width="196" height="276" rx="26" fill="#15131c" transform="translate(14 14)"/>
+    <rect x="170" y="112" width="196" height="276" rx="26" fill="#fff3d6" stroke="#15131c" stroke-width="10"/>
+    <text x="196" y="170" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="54" fill="#15131c">S</text>
+    <path d="M268 196c-30 34-62 54-62 86 0 22 17 37 37 37 10 0 18-3 24-9-2 14-8 26-20 36h42c-12-10-18-22-20-36 6 6 14 9 24 9 20 0 37-15 37-37 0-32-32-52-62-86z" fill="#15131c" transform="translate(0 4)"/>
+  </g>
+</svg>
