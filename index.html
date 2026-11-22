@@ -1388,4 +1388,10 @@ function Ratscrew(root, ui){
 buildMenu(); route();
 })();
 </script>
+<script>
+// Offline support: cache the table so it opens with no signal (online play still needs a connection).
+if('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+</script>
 </body></html>
