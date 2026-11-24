@@ -564,23 +564,28 @@ const dec = n => ({ s:SUITS[Math.floor(n/13)], r:n%13 + 1, up:true, _id:'n'+n })
 // Speed runs on a physical clock, the same for you, a friend and the computer (all in ms):
 // a replacement card takes `refill` to pick up and `settle` to land in your hand, one card at a time;
 // a hand needs `gap` between two plays; a card put on the wrong pile freezes that hand for `fumble`.
-const SPEED_T = { refill:420, settle:300, gap:220, fumble:850, lift:280 };
+// If the pile changed under you in the last `beaten` ms (the other player got there first), the card just comes back.
+const SPEED_T = { refill:420, settle:300, gap:220, fumble:850, lift:280, beaten:600 };
 const SpeedRules = {
   deal(){
     const d = shuffle(makeDeck()).map(enc), z = () => [0,0,0,0,0];
     return { h:[d.splice(0,5), d.splice(0,5)], dr:[d.splice(0,15), d.splice(0,15)], sd:[d.splice(0,6), d.splice(0,6)], c:[[],[]],
-      q:[[],[]], ready:[z(),z()], next:[0,0], lock:[0,0], phase:'deal', n:3, winner:null, seq:0 };
+      q:[[],[]], ready:[z(),z()], next:[0,0], lock:[0,0], was:[null,null], at:[0,0], phase:'deal', n:3, winner:null, seq:0 };
   },
   fits(card, top){ if(card==null || top==null) return false; const d = Math.abs(card%13 - top%13); return d===1 || d===12; },
   top(S, k){ const p = S.c[k]; return p.length ? p[p.length-1] : null; },
   anyMove(S, p){ return S.h[p].some(c => c!=null && [0,1].some(k => SpeedRules.fits(c, SpeedRules.top(S,k)))); },
   pending(S, p){ return S.q[p].length>0 && S.dr[p].length>0; },
-  // Put the card in slot i on centre pile k. 'ok', 'miss' (wrong pile: fumble) or 'busy' (hand not ready yet).
+  // Put the card in slot i on centre pile k: 'ok', 'miss' (wrong pile: fumble), 'beaten' (it fit a moment ago) or 'busy' (hand not ready).
   play(S, p, i, k, now){
     if(S.phase!=='play' || (k!==0 && k!==1)) return 'busy';
     const card = S.h[p][i];
     if(card==null || now < S.ready[p][i] || now < S.lock[p] || now < S.next[p]) return 'busy';
-    if(!SpeedRules.fits(card, SpeedRules.top(S,k))){ S.lock[p] = now + SPEED_T.fumble; return 'miss'; }
+    if(!SpeedRules.fits(card, SpeedRules.top(S,k))){
+      if(now - S.at[k] < SPEED_T.beaten && SpeedRules.fits(card, S.was[k])) return 'beaten';
+      S.lock[p] = now + SPEED_T.fumble; return 'miss';
+    }
+    S.was[k] = SpeedRules.top(S,k); S.at[k] = now;
     S.c[k].push(card); S.h[p][i] = null; S.q[p].push(i); S.next[p] = now + SPEED_T.gap;
     if(S.h[p].every(c => c==null) && !S.dr[p].length){ S.phase='over'; S.winner=p; }
     return 'ok';
@@ -601,6 +606,7 @@ const SpeedRules = {
       const half = Math.ceil(pool.length/2); S.sd = [pool.slice(0,half), pool.slice(half)];
     }
     for(const k of [0,1]) if(S.sd[k].length) S.c[k].push(S.sd[k].pop());
+    S.was = [null,null];
   },
   // What a screen needs to draw (also what travels online).
   view(S, now){
@@ -617,6 +623,7 @@ function Speed(root, ui){
   let mode=null, S=null, timers=[], think=1000, keyHandler=null, view=null;
   let sel=[null,null], selAt=[0,0], hints=store.get('speed-hints', false), myLock=0;
   let cpuTimer=null, cpuLift=null; const refillT=[null,null];
+  const seenWas=[null,null], seenAt=[0,0];   // guest: what each pile showed just before it last changed
   // online state
   let room=null, net=null; // net = {role:'host'|'guest', code, guestPeer, unsubs:[]}
 
@@ -735,14 +742,18 @@ function Speed(root, ui){
     if(mode==='guest'){
       if(myLock > now()) return false;
       if(net && net.room) net.room.emit('act', {i,k}).catch(()=>{});
-      if(!SpeedRules.fits(card, view.t[k])){ fumbled(p, card); myLock = now()+SPEED_T.fumble; later(draw, SPEED_T.fumble+20); return false; }
+      if(!SpeedRules.fits(card, view.t[k])){
+        const beaten = now() - seenAt[k] < SPEED_T.beaten && SpeedRules.fits(card, seenWas[k]);
+        if(!beaten){ myLock = now()+SPEED_T.fumble; later(draw, SPEED_T.fumble+20); }
+        sel[p] = null; fumbled(p, card); return false;
+      }
       // Show the move straight away; the host's next state confirms it.
       const v = JSON.parse(JSON.stringify(view)); v.h[p][i]=null; v.u[k]=v.t[k]; v.t[k]=card; v.cn[k]++; view=v; sel[p]=null; draw(); return true;
     }
     const r = apply(p, i, k);
     if(r!=='busy') sel[p] = null;
     if(r==='ok'){ draw(); return true; }
-    if(r==='miss') fumbled(p, card);
+    if(r==='miss' || r==='beaten') fumbled(p, card);
     return false;
   }
   function fumbled(p, card){
@@ -926,6 +937,7 @@ function Speed(root, ui){
       else if(!view && v.ph==='deal') fx.deal(75);
       lastSeq = v.seq;
       if(sel[1]!=null && v.h[1][sel[1]]==null) sel[1]=null;
+      [0,1].forEach(k => { if(view && view.t[k]!==v.t[k]){ seenWas[k]=view.t[k]; seenAt[k]=now(); } });
       view = v; draw();
     }));
     net.unsubs.push(r.onPeers(ch => {
