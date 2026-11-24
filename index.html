@@ -254,6 +254,8 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .golf{--cw:min(74px, 18vw);display:flex;flex-direction:column;gap:16px;align-items:center}
 .golf-grid{display:grid;grid-template-columns:repeat(3,var(--cw));gap:8px}
 .golf .live{box-shadow:0 0 0 3px var(--butter), 3px 4px 0 var(--ink)}
+.golf .mid{align-items:flex-start}
+.golf-held .slot{opacity:.35}
 
 /* ---------- Ratscrew ---------- */
 .rat{--cw:min(110px, 26vw);display:flex;flex-direction:column;align-items:center;gap:14px}
@@ -1275,7 +1277,7 @@ function Eights(root, ui){
   }
   function sortHand(){ P.sort((a,b)=> SUITS.indexOf(a.s)-SUITS.indexOf(b.s) || a.r-b.r); }
   function refill(){ if(stock.length) return true; if(discard.length<=1) return false; const t=discard.pop(); stock=shuffle(discard.map(c=>(c.up=false,c))); discard=[t]; return true; }
-  const ready = () => turn==='p' && !choosing && !over && !fx.busy();
+  const ready = () => turn==='p' && !choosing && !over;
   function play(c, el){
     if(!ready()) return false;
     if(!playable(c)){ if(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } return false; }
@@ -1626,6 +1628,7 @@ function Holdem(root, ui){
 // ======================= SIX-CARD GOLF =======================
 function Golf(root, ui){
   const wrap = h('div','golf'); root.appendChild(wrap);
+  const fx = Motion(wrap);
   const HOLES = 9;
   let H, stock, discard, turn, phase, held, heldFrom, final, hole, totals, msg, timer, peeks, starter;
   const val = c => c.r===2 ? -2 : c.r===13 ? 0 : c.r>=11 ? 10 : c.r;
@@ -1638,39 +1641,50 @@ function Golf(root, ui){
   }
   // computer's estimate: unknown cards count as 5
   function est(hand){ let s=0; for(let k=0;k<3;k++){ const a=hand[k], b=hand[k+3]; if(a.up && b.up && a.c.r===b.c.r) continue; s += (a.up?val(a.c):5) + (b.up?val(b.c):5); } return s; }
-  function newGame(){ clearTimeout(timer); hole=1; totals=[0,0]; starter=0; deal(); }
+  function newGame(){ clearTimeout(timer); hole=1; totals=[0,0]; starter=0; wrap.innerHTML=''; deal(); }
   function deal(){
     const d = shuffle(makeDeck());
     H = [0,1].map(() => d.splice(0,6).map(c => ({c:{...c, up:true}, up:false})));
     discard = [{...d.pop(), up:true}]; stock = d; held=null; heldFrom=null; final=null; peeks=0;
-    // computer turns two of its cards
-    shuffle([0,1,2,3,4,5]).slice(0,2).forEach(k => H[1][k].up=true);
-    phase='peek'; turn=0; msg='Turn over any two of your cards to start.'; render();
+    phase='deal'; turn=0; msg='Dealing…';
+    fx.sweep('stock'); fx.deal(55); render();
+    // the computer turns two of its cards, then you pick yours
+    later(() => { shuffle([0,1,2,3,4,5]).slice(0,2).forEach(k => H[1][k].up=true); phase='peek'; msg='Turn over any two of your cards to start.'; render(); }, fx.left() + 250);
   }
   const allUp = p => H[p].every(x=>x.up);
   function refill(){ if(stock.length) return; const top=discard.pop(); stock=shuffle(discard.map(c=>({...c}))); discard=[top]; }
-  function clickStock(){ if(phase!=='draw' || turn!==0) return; refill(); held={...stock.pop(), up:true}; heldFrom='stock'; phase='hold'; msg='Swap it into your grid, or tap the discard pile to throw it away.'; render(); }
+  const mine = () => turn===0;
+  function clickStock(){ if(phase!=='draw' || !mine()) return; refill(); held={...stock.pop(), up:true}; heldFrom='stock'; phase='hold'; msg='Swap it into your grid, or throw it on the discard pile.'; render(); }
   function clickDiscard(){
-    if(turn!==0) return;
-    if(phase==='draw'){ held=discard.pop(); heldFrom='discard'; phase='hold'; msg='Tap one of your cards to swap it out.'; return render(); }
+    if(!mine()) return;
+    if(phase==='draw'){ held=discard.pop(); heldFrom='discard'; phase='hold'; msg='Tap or drag it onto the card in your grid it replaces.'; return render(); }
     if(phase==='hold' && heldFrom==='stock'){ discard.push(held); held=null;
       if(H[0].some(x=>!x.up)){ phase='flip'; msg='Now turn over one of your face-down cards.'; render(); } else endTurn(0); }
   }
   function clickMine(k){
     const x=H[0][k];
-    if(phase==='peek'){ if(x.up) return; x.up=true; peeks++; if(peeks<2) return render(); phase='wait'; return startHole(); }
+    if(phase==='peek'){ if(x.up) return; x.up=true; peeks++; if(peeks<2) return render(); phase='wait'; render(); return later(startHole, 450); }
     if(turn!==0) return;
     if(phase==='hold'){ discard.push(x.c); H[0][k]={c:held, up:true}; held=null; return endTurn(0); }
     if(phase==='flip' && !x.up){ x.up=true; return endTurn(0); }
   }
-  function startHole(){ turn=starter; if(turn===0){ phase='draw'; msg='Your turn. Draw from the deck or take the discard.'; render(); } else { phase='cpu'; render(); later(cpu, 900); } }
+  // Drag the card you're holding (or the top discard) onto a grid card to swap, or the drawn card onto the discard.
+  function dropHeld(key){
+    if(turn!==0) return false;
+    if(key==='disc'){ if(phase!=='hold' || heldFrom!=='stock') return false; clickDiscard(); return true; }
+    const k = +key.slice(1);
+    if(phase==='draw'){ held=discard.pop(); heldFrom='discard'; phase='hold'; }
+    if(phase!=='hold') return false;
+    clickMine(k); return true;
+  }
+  function startHole(){ turn=starter; if(turn===0){ phase='draw'; msg='Your turn. Draw from the deck or take the discard.'; render(); } else { phase='cpu'; msg=''; render(); later(cpu, 900); } }
   function endTurn(p){
     held=null;
     if(final===null && allUp(p)) final=p;
     const next=1-p;
-    if(final!==null && next===final) return endRound();
+    if(final!==null && next===final){ render(); return later(endRound, fx.left() + 350); }
     turn=next;
-    if(turn===1){ phase='cpu'; render(); later(cpu, 900); }
+    if(turn===1){ phase='cpu'; msg=''; render(); later(cpu, 900); }
     else { phase='draw'; msg = (final===1 ? 'The computer has turned every card. This is your last turn. ' : '') + msg; render(); }
   }
   function bestSpot(hand, card){
@@ -1678,27 +1692,30 @@ function Golf(root, ui){
     for(let k=0;k<6;k++){ const copy=hand.map(x=>({...x})); copy[k]={c:card, up:true}; const d=est(copy)-est(hand); if(!best || d<best.d) best={k,d}; }
     return best;
   }
+  const name = c => `${rankLabel(c.r)}${c.s}`;
+  // The computer's turn, in two beats: pick a card up, then put it somewhere.
   function cpu(){
     const me=H[1], top=discard[discard.length-1];
     const take = bestSpot(me, top);
-    const name = c => `${rankLabel(c.r)}${c.s}`;
-    const lastTurn = final===0;
     if(take.d <= -3 || val(top)<=1){
-      discard.pop(); discard.push(me[take.k].c); me[take.k]={c:top, up:true};
-      msg=`Computer took the ${name(top)} from the discard pile. Your turn.`;
-    } else {
-      refill(); const card={...stock.pop(), up:true}; const spot=bestSpot(me, card);
+      held = discard.pop(); heldFrom='discard'; msg=`Computer takes the ${name(held)}…`; render();
+      return later(() => { discard.push(me[take.k].c); me[take.k]={c:held, up:true}; msg=`Computer took the ${name(top)} from the discard pile. Your turn.`; endTurn(1); }, 800);
+    }
+    refill(); held={...stock.pop(), up:true}; heldFrom='stock'; msg='Computer draws…'; render();
+    later(() => {
+      const card = held, spot=bestSpot(me, card), lastTurn = final===0;
       const down = me.map((x,k)=>x.up?-1:k).filter(k=>k>=0);
-      if(spot.d < -1 || (down.length===0) || lastTurn && spot.d<0){
+      if(spot.d < -1 || down.length===0 || lastTurn && spot.d<0){
         discard.push(me[spot.k].c); me[spot.k]={c:card, up:true}; msg=`Computer drew a card and kept it. Your turn.`;
-      } else {
-        discard.push(card);
-        // flipping the last face-down card would end the hole; avoid that while it is behind
+        return endTurn(1);
+      }
+      discard.push(card); held=null; msg=`Computer threw away the ${name(card)}…`; render();
+      later(() => {
         const k = down[Math.floor(Math.random()*down.length)]; me[k].up=true;
         msg=`Computer threw away the ${name(card)} and turned over a card. Your turn.`;
-      }
-    }
-    endTurn(1);
+        endTurn(1);
+      }, 650);
+    }, 850);
   }
   function endRound(){
     H.forEach(hd => hd.forEach(x => x.up=true));
@@ -1710,14 +1727,16 @@ function Golf(root, ui){
   function grid(p){
     const g=h('div','golf-grid');
     H[p].forEach((x,k) => {
-      const el = cardEl(x.c, x.up);
+      const el = cardEl(x.c, x.up); el.dataset.from='stock'; el.dataset.order = k*2 + p;
       const clickable = p===0 && ((phase==='peek' && !x.up) || (turn===0 && (phase==='hold' || (phase==='flip' && !x.up))));
       if(clickable){ el.classList.add('can','live'); el.setAttribute('role','button'); el.tabIndex=0; el.addEventListener('click',()=>clickMine(k)); el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); clickMine(k);} }); }
+      if(p===0) el.dataset.drop = 'g'+k;
       g.appendChild(el);
     });
     return g;
   }
-  function render(){
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
     const scoreLine = p => phase==='end' ? `scores ${score(H[p])}` : `showing ${score(H[p], true)}`;
     const top = h('div','seat'); top.append(h('div','label', `Computer · ${scoreLine(1)} · total ${totals[1]}`), grid(1)); wrap.appendChild(top);
@@ -1725,21 +1744,29 @@ function Golf(root, ui){
     const st = stock.length ? cardEl({}, false) : h('div','slot');
     if(turn===0 && phase==='draw'){ st.classList.add('can','live'); st.setAttribute('role','button'); st.setAttribute('aria-label','Draw from the deck'); }
     st.addEventListener('click', clickStock);
-    const dc = discard.length ? cardEl(discard[discard.length-1], true) : h('div','slot');
-    if(turn===0 && (phase==='draw' || (phase==='hold' && heldFrom==='stock'))){ dc.classList.add('can','live'); dc.setAttribute('role','button'); dc.setAttribute('aria-label', phase==='draw' ? 'Take the discard' : 'Throw away the drawn card'); }
-    dc.addEventListener('click', clickDiscard);
+    const pile = pileEl(discard, {from:'stock', order:20});
+    const dc = pile.lastChild;
+    const canTake = turn===0 && phase==='draw', canThrow = turn===0 && phase==='hold' && heldFrom==='stock';
+    if(canTake || canThrow){ dc.classList.add('can','live'); dc.setAttribute('role','button'); dc.setAttribute('aria-label', canTake ? 'Take the discard' : 'Throw away the drawn card'); }
+    if(canTake && discard.length) dragCard(dc, { tap: clickDiscard, drop: dropHeld });
+    else dc.addEventListener('click', clickDiscard);
     const col = (el, label) => { const s=h('div','seat'); s.style.width='auto'; s.append(el, h('div','label',label)); return s; };
-    mid.append(col(st,'Deck'), col(dc,'Discard'));
-    if(held){ const hc=cardEl(held,true); hc.classList.add('sel'); mid.append(col(hc,'In hand')); }
+    const sc = col(st,'Deck'); sc.dataset.anchor='stock';
+    const dcol = col(pile,'Discard'); dcol.dataset.drop='disc';
+    mid.append(sc, dcol);
+    const hc = held ? cardEl(held,true) : h('div','slot'); hc.dataset.from='stock';
+    if(held){ hc.classList.add('sel'); if(turn===0) dragCard(hc, { drop: dropHeld }); }
+    const hold = col(hc, held ? (turn===0 ? 'In your hand' : 'Computer holds') : '&nbsp;'); hold.classList.add('golf-held');
+    mid.append(hold);
     wrap.appendChild(mid);
     const me = h('div','seat'); me.append(grid(0), h('div','label', `You · ${scoreLine(0)} · total ${totals[0]}`)); wrap.appendChild(me);
     if(phase==='end'){
       const ctr=h('div','controls');
-      if(hole<HOLES){ const b=h('button','btn primary big',`Tee off hole ${hole+1}`); b.addEventListener('click',()=>{ hole++; starter=1-starter; deal(); }); ctr.appendChild(b); }
+      if(hole<HOLES){ const b=h('button','btn primary big',`Tee off hole ${hole+1}`); b.addEventListener('click',()=>{ if(phase!=='end') return; hole++; starter=1-starter; deal(); }); ctr.appendChild(b); }
       else { const res = totals[0]<totals[1] ? 'You win the round' : totals[0]>totals[1] ? 'Computer wins the round' : 'All square'; ctr.appendChild(h('div','total', `${res}: ${totals[0]} to ${totals[1]}`)); const b=h('button','btn primary big','Play 9 more'); b.addEventListener('click',newGame); ctr.appendChild(b); }
       wrap.appendChild(ctr);
     }
-    ui.status(`<span class="label">Hole ${hole}/${HOLES}</span> ${phase==='cpu' ? 'Computer is playing…' : msg}`);
+    ui.status(`<span class="label">Hole ${hole}/${HOLES}</span> ${phase==='cpu' ? (msg || 'Computer is playing…') : msg}`);
   }
   return { newGame, stop(){ clearTimeout(timer); } };
 }
