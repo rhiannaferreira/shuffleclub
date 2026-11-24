@@ -356,10 +356,10 @@ function Motion(wrap){
     snap = new Map();
     wrap.querySelectorAll('[data-cid]').forEach(el => snap.set(el.dataset.cid, {r:el.getBoundingClientRect(), up:!el.classList.contains('back'), el}));
   }
-  function fly(el, from, delay, flip){
+  function fly(el, from, delay, flip, point){
     const to = el.getBoundingClientRect(); if(!to.width || !from.width) return;
     const [fx,fy] = centre(from), [tx,ty] = centre(to);
-    const dx = fx-tx, dy = fy-ty, s = from.width/to.width;
+    const dx = fx-tx, dy = fy-ty, s = point ? .9 : from.width/to.width;
     if(Math.abs(dx)<1 && Math.abs(dy)<1 && Math.abs(s-1)<.02 && !flip) return;
     const dur = Math.round(Math.min(480, 230 + Math.hypot(dx,dy)*.3));
     const start = `translate(${dx}px,${dy}px) scale(${s})`;
@@ -381,8 +381,9 @@ function Motion(wrap){
       else if(was) fly(el, was.r, 0, was.up === el.classList.contains('back'));
       else if(el.dataset.from && anchors[el.dataset.from]) fresh.push([el, el.dataset.order != null ? +el.dataset.order : n]);
     });
-    fresh.sort((a,b) => a[1]-b[1]).forEach(([el], n) =>
-      fly(el, anchors[el.dataset.from].getBoundingClientRect(), n*stagger, !el.classList.contains('back')));
+    // An anchor marked data-point is just a spot on the table (cards keep their size), not a pile.
+    fresh.sort((a,b) => a[1]-b[1]).forEach(([el], n) => { const a = anchors[el.dataset.from];
+      fly(el, a.getBoundingClientRect(), n*stagger, !el.classList.contains('back'), a.dataset.point != null); });
     // Cards that left the table can be swept into a pile (a won trick, a collected stack).
     const to = sink && anchors[sink];
     if(to){
@@ -502,7 +503,7 @@ const GAMES = {
     rules:`<p>You each get 10 cards. On your turn, draw from the deck or take the top discard, then throw one card away. Build melds: sets of 3 or 4 of the same rank, or runs of 3+ in one suit (Ace is low). Cards not in a meld are deadwood: Aces 1, number cards face value, faces 10.</p><p>Once your deadwood is 10 or less you can knock to end the hand. Your opponent can lay off cards onto your melds. Lower deadwood scores the difference. If they tie or beat you, that's an undercut and they get a 25 bonus. Knock with zero deadwood for gin: 25 plus their deadwood, no lay-offs. First to 100 wins.</p><p>Your hand groups itself: yellow trays are melds, the dashed tray is deadwood.</p>`,
     make: Gin },
   klondike: { name:'Klondike', glyph:'A–K', players:'Solo patience', blurb:'Build four suits from Ace to King.',
-    rules:`<p>Move cards between the seven columns in descending order, alternating red and black. Only a King can fill an empty column. Build each foundation (top right) up by suit from Ace to King.</p><p>Tap a card to pick it up, then tap where it should go. Tap a picked-up card again to send it to a foundation. Tap the deck to turn over a card; when it runs out, tap again to recycle.</p>`,
+    rules:`<p>Move cards between the seven columns in descending order, alternating red and black. Only a King can fill an empty column. Build each foundation (top right) up by suit from Ace to King.</p><p>Drag a card (and everything on top of it) to where it should go, or tap it and then tap the pile. Tap a picked-up card again to put it back down. Tap the deck to turn over a card; when it runs out, tap again to recycle.</p>`,
     make: Klondike },
   blackjack: { name:'Blackjack', glyph:'21', players:'You vs dealer', blurb:'Get closer to 21 than the dealer without busting.',
     rules:`<p>Place a bet with the chips and deal. Number cards count face value, J/Q/K count 10, Aces count 1 or 11. Hit to take a card, Stand to hold, Double to double your bet and take exactly one more card.</p><p>The dealer draws to 17 and stands on all 17s. A two-card 21 pays 3 to 2. Four decks are shuffled together.</p>`,
@@ -959,12 +960,14 @@ function Speed(root, ui){
 function Klondike(root, ui){
   let S, sel, moves, won;
   const wrap = h('div','kl'); root.appendChild(wrap);
+  const fx = Motion(wrap);
   const top = (a) => a[a.length-1];
   function newGame(){
     const d = shuffle(makeDeck());
     S = {stock:[], waste:[], found:[[],[],[],[]], tab:[[],[],[],[],[],[],[]]};
     for(let i=0;i<7;i++) for(let j=0;j<=i;j++){ const c=d.pop(); c.up = (j===i); S.tab[i].push(c); }
-    S.stock = d; sel=null; moves=0; won=false; render();
+    S.stock = d; sel=null; moves=0; won=false;
+    wrap.innerHTML=''; fx.deal(28); render();
   }
   const arr = src => src.type==='waste' ? S.waste : src.type==='found' ? S.found[src.i] : S.tab[src.i];
   const cardsOf = src => src.type==='tab' ? S.tab[src.i].slice(src.j) : [top(arr(src))];
@@ -981,17 +984,17 @@ function Klondike(root, ui){
     S.tab.forEach(p => { if(p.length && !top(p).up) top(p).up = true; });
     moves++; return true;
   }
-  function toFoundation(src){ if(cardsOf(src).length!==1) return false; for(let i=0;i<4;i++) if(tryMove(src,{type:'found',i})) return true; return false; }
   function clickStock(){
     if(won) return;
     if(S.stock.length){ const c=S.stock.pop(); c.up=true; S.waste.push(c); }
     else if(S.waste.length){ S.stock = S.waste.reverse().map(c => (c.up=false, c)); S.waste=[]; }
     sel=null; moves++; render();
   }
+  // You always say where a card goes: tap it, then tap the pile (or drag it there). Tapping it again puts it back down.
   function clickSpot(src, selectable){
     if(won) return;
     if(sel){
-      if(same(sel, src)){ toFoundation(sel); sel=null; return render(); }
+      if(same(sel, src)){ sel=null; return render(); }
       const dst = src.type==='tab' ? {type:'tab', i:src.i} : src.type==='found' ? {type:'found', i:src.i} : null;
       const ok = dst && tryMove(sel, dst);
       sel = ok ? null : (selectable ? src : null);
@@ -1000,11 +1003,18 @@ function Klondike(root, ui){
     if(selectable) sel = src;
     render();
   }
-  function render(){
+  function dropOn(src, key){
+    if(won) return false;
+    const dst = key[0]==='f' ? {type:'found', i:+key.slice(1)} : {type:'tab', i:+key.slice(1)};
+    if(!tryMove(src, dst)) return false;
+    sel=null; render(); return true;
+  }
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
     const row1 = h('div','row');
     // stock
-    const stock = h('div','pile stock'); stock.setAttribute('role','button'); stock.setAttribute('aria-label','Deck');
+    const stock = h('div','pile stock'); stock.setAttribute('role','button'); stock.setAttribute('aria-label','Deck'); stock.dataset.anchor='stock';
     stock.appendChild(S.stock.length ? cardEl(top(S.stock), false) : h('div','slot', '↻'));
     stock.appendChild(h('div','count', S.stock.length + ' left'));
     stock.addEventListener('click', clickStock); row1.appendChild(stock);
@@ -1013,15 +1023,15 @@ function Klondike(root, ui){
     if(S.waste.length){
       const el = cardEl(top(S.waste)); el.classList.add('can');
       const src={type:'waste'}; if(same(sel,src)) el.classList.add('sel');
-      el.addEventListener('click', () => clickSpot(src, true));
-      el.addEventListener('dblclick', e => { e.preventDefault(); sel=null; toFoundation(src); render(); });
+      dragCard(el, { tap: () => clickSpot(src, true), drop: k => dropOn(src, k) });
       waste.appendChild(el);
     } else waste.appendChild(h('div','slot'));
     row1.appendChild(waste); row1.appendChild(h('div','pile'));
     // foundations
     S.found.forEach((f,i) => {
-      const p = h('div','pile'); const src={type:'found', i};
-      if(f.length){ const el=cardEl(top(f)); el.classList.add('can'); if(same(sel,src)) el.classList.add('sel'); p.appendChild(el); el.addEventListener('click', () => clickSpot(src, true)); }
+      const p = h('div','pile'); const src={type:'found', i}; p.dataset.drop = 'f'+i;
+      if(f.length){ const el=cardEl(top(f)); el.classList.add('can'); if(same(sel,src)) el.classList.add('sel'); p.appendChild(el);
+        dragCard(el, { tap: () => clickSpot(src, true), drop: k => dropOn(src, k) }); }
       else { const sl=h('div','slot' + (sel?' hot':''), 'A'); sl.addEventListener('click', () => clickSpot(src,false)); p.appendChild(sl); }
       row1.appendChild(p);
     });
@@ -1029,18 +1039,19 @@ function Klondike(root, ui){
     // tableau
     const row2 = h('div','row');
     S.tab.forEach((pile,i) => {
-      const p = h('div','pile');
+      const p = h('div','pile'); p.dataset.drop = 't'+i;
       const base = h('div','slot' + (sel && !pile.length ? ' hot':''), pile.length?'':'K');
       base.addEventListener('click', () => clickSpot({type:'tab', i, j:0}, false));
       p.appendChild(base);
-      let off = 0;
+      let off = 0; const els = [];
       pile.forEach((c,j) => {
         const el = cardEl(c); el.classList.add('abs'); el.style.top = `calc(var(--cw) * ${off})`;
+        el.dataset.from = 'stock'; el.dataset.order = j*7 + i;   // dealt across the row, one layer at a time
         const src = {type:'tab', i, j};
-        if(c.up){ el.classList.add('can'); el.addEventListener('click', e => { e.stopPropagation(); clickSpot(src, true); });
-          el.addEventListener('dblclick', e => { e.preventDefault(); if(j===pile.length-1){ sel=null; toFoundation(src); render(); } }); }
+        if(c.up){ el.classList.add('can');
+          dragCard(el, { tap: () => clickSpot(src, true), drop: k => dropOn(src, k), group: () => els.slice(j) }); }
         if(sel && sel.type==='tab' && sel.i===i && j>=sel.j) el.classList.add('sel');
-        p.appendChild(el);
+        p.appendChild(el); els.push(el);
         off += c.up ? .32 : .16;
       });
       p.style.height = `calc(var(--cw) * ${1.4 + off})`;
@@ -1050,7 +1061,7 @@ function Klondike(root, ui){
     const done = S.found.reduce((n,f)=>n+f.length,0);
     if(done===52 && !won){ won = true; }
     ui.status(won ? `<span class="win">Solved in ${moves} moves. Nicely played.</span>` :
-      `Moves <b>${moves}</b> · On foundations <b>${done}</b>/52 · ${sel ? 'Now tap where it goes.' : 'Tap a card to pick it up.'}`);
+      `Moves <b>${moves}</b> · On foundations <b>${done}</b>/52 · ${sel ? 'Now tap where it goes.' : 'Drag a card, or tap it and then where it goes.'}`);
   }
   return { newGame };
 }
