@@ -1171,57 +1171,75 @@ function Blackjack(root, ui){
 
 // ======================= WAR =======================
 function War(root, ui){
-  let A, B, shownA, shownB, rounds, wars, msg, over, timer;
+  let A, B, shownA, shownB, rounds, wars, msg, over, timer, auto, busy, lastWin;
   const wrap = h('div','felt'); root.appendChild(wrap);
+  const fx = Motion(wrap);
+  const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
   const val = c => c.r===1 ? 14 : c.r;
   function newGame(){
-    clearInterval(timer); timer=null;
+    clearTimeout(timer); auto=false; busy=false; lastWin=null;
     const d = shuffle(makeDeck()); A=d.slice(0,26); B=d.slice(26);
     shownA=[]; shownB=[]; rounds=0; wars=0; over=false; msg='Flip to start the first round.'; render();
   }
+  // Both players turn a card. On a tie, three go down and one more comes up, a beat at a time.
   function flip(){
-    if(over) return;
-    rounds++;
-    const pile=[]; shownA=[]; shownB=[];
-    let a=A.shift(), b=B.shift(); a.up=b.up=true; pile.push(a,b); shownA.push(a); shownB.push(b);
+    if(over || busy) return;
+    busy=true; rounds++;
+    const pile=[], steps=[];
+    let a=A.shift(), b=B.shift(); a.up=b.up=true; pile.push(a,b); steps.push([[a],[b]]);
     let winner=null, warHere=0;
     while(val(a)===val(b)){
       warHere++; wars++;
       if(!A.length || !B.length){ winner = A.length ? 'A' : 'B'; break; }
-      const n = Math.min(3, A.length-1, B.length-1);
-      for(let k=0;k<n;k++){ const x=A.shift(), y=B.shift(); x.up=y.up=false; pile.push(x,y); shownA.push(x); shownB.push(y); }
-      a=A.shift(); b=B.shift(); a.up=b.up=true; pile.push(a,b); shownA.push(a); shownB.push(b);
+      const n = Math.min(3, A.length-1, B.length-1), da=[], db=[];
+      for(let k=0;k<n;k++){ const x=A.shift(), y=B.shift(); x.up=y.up=false; pile.push(x,y); da.push(x); db.push(y); }
+      if(n) steps.push([da, db]);
+      a=A.shift(); b=B.shift(); a.up=b.up=true; pile.push(a,b); steps.push([[a],[b]]);
     }
     if(!winner) winner = val(a)>val(b) ? 'A' : 'B';
-    const won = shuffle(pile.map(c => ({...c, up:false})));
-    (winner==='A' ? A : B).push(...won);
+    if(lastWin) fx.sweep(lastWin==='A' ? 'dA' : 'dB');
+    shownA=[]; shownB=[];
+    const show = n => {
+      shownA.push(...steps[n][0]); shownB.push(...steps[n][1]);
+      if(n===0) msg = ''; else if(steps[n][0][0] && !steps[n][0][0].up) msg = warHere>1 && n>2 ? 'Double war! Three down…' : 'War! Three cards down…';
+      render();
+      if(n+1 < steps.length) return later(() => show(n+1), steps[n][0][0] && !steps[n][0][0].up ? 650 : 900);
+      later(() => settle(winner, pile, warHere), 520);
+    };
+    show(0);
+  }
+  function settle(winner, pile, warHere){
+    (winner==='A' ? A : B).push(...shuffle(pile.map(c => ({...c, up:false}))));
+    lastWin = winner; busy=false;
     const tag = warHere ? (warHere>1 ? `Double war! ` : `War! `) : '';
     msg = winner==='A' ? `<span class="win">${tag}You take ${pile.length} cards.</span>` : `<span class="lose">${tag}Computer takes ${pile.length} cards.</span>`;
-    if(!A.length || !B.length){ over=true; clearInterval(timer); timer=null;
+    if(!A.length || !B.length){ over=true; auto=false;
       msg = A.length ? `<span class="win">You collected all 52 cards in ${rounds} rounds.</span>` : `<span class="lose">The computer won after ${rounds} rounds.</span>`; }
     render();
+    if(auto && !over) later(flip, 650);
   }
-  function auto(){ if(timer){ clearInterval(timer); timer=null; render(); return; } timer=setInterval(()=>{ flip(); if(over && timer){ clearInterval(timer); timer=null; render(); } }, 260); render(); }
-  function seat(label, deckN, shown){
+  function toggleAuto(){ auto=!auto; render(); if(auto && !busy) flip(); }
+  function seat(label, deckN, shown, key){
     const s=h('div','seat');
     s.appendChild(h('div','label', `${label} · <span class="total">${deckN}</span> cards`));
     const row=h('div','mid');
-    const dk = deckN ? cardEl({}, false) : h('div','slot');
-    const hd=h('div','hand overlap'); shown.forEach(c=>hd.appendChild(cardEl(c)));
+    const dk = deckN ? cardEl({}, false) : h('div','slot'); dk.dataset.anchor = key;
+    const hd=h('div','hand overlap'); shown.forEach(c => { const el=cardEl(c); el.dataset.from=key; hd.appendChild(el); });
     if(!shown.length) hd.appendChild(h('div','slot'));
     row.append(dk, hd); s.appendChild(row); return s;
   }
-  function render(){
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
-    wrap.appendChild(seat('Computer', B.length, shownB));
+    wrap.appendChild(seat('Computer', B.length, shownB, 'dB'));
     const ctr=h('div','controls');
-    const f=h('button','btn primary','Flip'); f.disabled=over || !!timer; f.addEventListener('click',flip);
-    const a=h('button','btn', timer ? 'Stop' : 'Auto-play'); a.disabled=over; a.addEventListener('click',auto);
+    const f=h('button','btn primary','Flip'); f.disabled=over || busy || auto; f.addEventListener('click',flip);
+    const a=h('button','btn', auto ? 'Stop' : 'Auto-play'); a.disabled=over; a.addEventListener('click',toggleAuto);
     ctr.append(f,a); wrap.appendChild(ctr);
-    wrap.appendChild(seat('You', A.length, shownA));
-    ui.status(`${msg} <span style="margin-left:auto" class="label">Round ${rounds} · Wars ${wars}</span>`);
+    wrap.appendChild(seat('You', A.length, shownA, 'dA'));
+    ui.status(`${msg || 'Flipping…'} <span style="margin-left:auto" class="label">Round ${rounds} · Wars ${wars}</span>`);
   }
-  return { newGame, stop(){ clearInterval(timer); } };
+  return { newGame, stop(){ clearTimeout(timer); auto=false; } };
 }
 
 // ======================= CRAZY EIGHTS =======================
