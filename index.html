@@ -155,6 +155,9 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .suitbadge span{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--paper);border:2px solid var(--ink);color:var(--ink);font-size:18px;margin-left:6px;vertical-align:middle;letter-spacing:0}
 .suitbadge span.r{color:var(--red-suit)}
 
+.bj-shoe{--cw:34px;position:absolute;right:0;top:0;transform:rotate(8deg)}
+.bj-tray{position:absolute;left:0;top:0;width:34px;height:48px;border:2px dashed #ffffff33;border-radius:5px;transform:rotate(-6deg)}
+.felt{position:relative}
 /* Memory */
 .mem{--cw:min(84px, calc((min(100vw, 780px) - 32px - 3 * 10px) / 4));display:grid;grid-template-columns:repeat(4,var(--cw));gap:10px;justify-content:center}
 .mem .card{cursor:pointer}
@@ -1068,20 +1071,47 @@ function Klondike(root, ui){
 
 // ======================= BLACKJACK =======================
 function Blackjack(root, ui){
-  let shoe=[], bank=store.get('bj-bank',500), bet=0, lastBet=25, P=[], D=[], phase='bet', result='';
+  let shoe=[], bank=store.get('bj-bank',500), bet=0, lastBet=25, P=[], D=[], phase='bet', result='', timer=null;
   const wrap = h('div','felt'); root.appendChild(wrap);
+  const fx = Motion(wrap);
+  const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
+  const STEP = 430;   // the dealer's hands: one card at a time
   const draw = (up=true) => { if(shoe.length<15) shoe = shuffle(makeDeck(4)); const c=shoe.pop(); c.up=up; return c; };
   function score(hand){ let t=0,a=0; for(const c of hand){ if(!c.up) continue; let v=c.r>10?10:c.r; if(c.r===1){a++; v=11;} t+=v; } while(t>21&&a){t-=10;a--;} return {t, soft:a>0}; }
   const full = hand => score(hand.map(c=>({...c, up:true}))).t;
-  function newGame(){ if(bank<5) bank=500; store.set('bj-bank',bank); P=[];D=[]; phase='bet'; bet=Math.min(lastBet, bank); result=''; render(); }
+  function newGame(){ clearTimeout(timer); if(bank<5) bank=500; store.set('bj-bank',bank); P=[];D=[]; phase='bet'; bet=Math.min(lastBet, bank); result=''; render(); }
   function deal(){
-    if(bet<=0 || bet>bank) return;
-    lastBet=bet; bank-=bet; P=[draw(),draw()]; D=[draw(),draw(false)]; phase='play';
-    if(full(P)===21 || full(D)===21) finish(); render();
+    if(phase!=='bet' || bet<=0 || bet>bank) return;
+    lastBet=bet; bank-=bet; P=[]; D=[]; phase='deal'; render();
+    // You, dealer, you, dealer (face down), like a real shoe.
+    const order = [() => P.push(draw()), () => D.push(draw()), () => P.push(draw()), () => D.push(draw(false))];
+    const step = n => {
+      if(n < order.length){ order[n](); render(); return later(() => step(n+1), STEP); }
+      if(full(P)===21 || full(D)===21){ D[1].up=true; render(); return later(() => { finish(); render(); }, STEP*1.6); }
+      phase='play'; render();
+    };
+    later(() => step(0), 120);
   }
-  function hit(){ P.push(draw()); const t=score(P).t; if(t>21) finish(); else if(t===21) return stand(); render(); }
-  function stand(){ D[1].up=true; while(score(D).t<17) D.push(draw()); finish(); render(); }
-  function dbl(){ if(bank<bet) return; bank-=bet; bet*=2; P.push(draw()); if(score(P).t>21){ finish(); render(); } else stand(); }
+  function hit(){
+    if(phase!=='play') return;
+    P.push(draw()); phase='deal'; render();
+    later(() => { const t=score(P).t; if(t>21){ finish(); render(); } else if(t===21) dealerTurn(); else { phase='play'; render(); } }, STEP);
+  }
+  function stand(){ if(phase==='play') dealerTurn(); }
+  function dbl(){
+    if(phase!=='play' || bank<bet || P.length!==2) return;
+    bank-=bet; bet*=2; P.push(draw()); phase='deal'; render();
+    later(() => { if(score(P).t>21){ finish(); render(); } else dealerTurn(); }, STEP);
+  }
+  // Turn the hole card, then draw to 17 a card at a time.
+  function dealerTurn(){
+    phase='dealer'; D[1].up=true; render();
+    const more = () => {
+      if(score(D).t<17){ D.push(draw()); render(); return later(more, STEP*1.5); }
+      later(() => { finish(); render(); }, STEP);
+    };
+    later(more, STEP*1.6);
+  }
   function finish(){
     D.forEach(c=>c.up=true);
     const p=score(P).t, d=score(D).t, pBJ=p===21&&P.length===2, dBJ=d===21&&D.length===2;
@@ -1094,18 +1124,26 @@ function Blackjack(root, ui){
     else { result=`<span class="lose">Dealer's ${d} beats ${p}. You lose ${bet}.</span>`; }
     phase='done'; store.set('bj-bank', bank);
   }
-  function next(){ P=[];D=[]; phase='bet'; bet=Math.min(lastBet, bank); if(bank<5){ bank=500; bet=25; result='Out of chips, so the house spotted you 500.'; store.set('bj-bank',bank);} render(); }
+  function next(){
+    if(phase!=='done') return;
+    P=[];D=[]; phase='bet'; bet=Math.min(lastBet, bank);
+    if(bank<5){ bank=500; bet=25; result='Out of chips, so the house spotted you 500.'; store.set('bj-bank',bank);}
+    fx.sweep('tray'); render();
+  }
   function seat(label, hand, showTotal){
     const s = h('div','seat');
     const st = score(hand);
     s.appendChild(h('div','label', label + (hand.length && showTotal ? ` · <span class="total">${st.t}${st.soft&&st.t<21?' soft':''}</span>` : '')));
-    const hd = h('div','hand overlap'); hand.forEach(c => hd.appendChild(cardEl(c)));
+    const hd = h('div','hand overlap'); hand.forEach(c => { const el=cardEl(c); el.dataset.from='shoe'; hd.appendChild(el); });
     if(!hand.length){ hd.appendChild(h('div','slot')); }
     s.appendChild(hd); return s;
   }
-  function render(){
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
-    wrap.appendChild(seat('Dealer', D, true));
+    const shoeEl = h('div','bj-shoe'); shoeEl.dataset.anchor='shoe'; shoeEl.appendChild(cardEl({}, false)); shoeEl.title='Shoe';
+    const tray = h('div','bj-tray'); tray.dataset.anchor='tray';
+    wrap.append(shoeEl, tray, seat('Dealer', D, true));
     const bankRow = h('div','bank', `<div><span class="label">Bankroll</span><strong>${bank}</strong></div><div><span class="label">Bet</span><strong>${bet}</strong></div>`);
     wrap.appendChild(bankRow);
     wrap.appendChild(seat('You', P, true));
@@ -1118,15 +1156,17 @@ function Blackjack(root, ui){
       wrap.appendChild(chips);
       btn('Clear bet', () => { bet=0; render(); }, 'btn', bet===0);
       btn('Deal', deal, 'btn primary', bet===0 || bet>bank);
-    } else if(phase==='play'){
-      btn('Hit', hit, 'btn primary'); btn('Stand', stand);
-      btn('Double', dbl, 'btn', P.length!==2 || bank<bet);
+    } else if(phase==='play' || phase==='deal' || phase==='dealer'){
+      const wait = phase!=='play';
+      btn('Hit', hit, 'btn primary', wait); btn('Stand', stand, 'btn', wait);
+      btn('Double', dbl, 'btn', wait || P.length!==2 || bank<bet);
     } else { btn('Next hand', next, 'btn primary'); }
     wrap.appendChild(ctr);
-    ui.status(phase==='bet' ? (result || 'Tap chips to set your bet, then deal.') : phase==='play' ? `You have <b>${score(P).t}</b>. Dealer shows <b>${score(D).t}</b>.` : result);
+    ui.status(phase==='bet' ? (result || 'Tap chips to set your bet, then deal.') : phase==='deal' ? 'Dealing…' : phase==='dealer' ? `Dealer plays… <b>${score(D).t}</b>` :
+      phase==='play' ? `You have <b>${score(P).t}</b>. Dealer shows <b>${score(D).t}</b>.` : result);
     if(phase==='bet') result='';
   }
-  return { newGame };
+  return { newGame, stop(){ clearTimeout(timer); } };
 }
 
 // ======================= WAR =======================
