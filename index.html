@@ -261,7 +261,6 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .rat{--cw:min(110px, 26vw);display:flex;flex-direction:column;align-items:center;gap:14px}
 .rat-pile{position:relative;width:calc(var(--cw) * 1.9);height:calc(var(--cw) * 1.55);cursor:pointer;touch-action:manipulation}
 .rat-pile .slot{margin:0 auto}
-.rat .land{animation:land .2s cubic-bezier(.3,1.7,.6,1)}
 
 /* ---------- Gin Rummy ---------- */
 .gin{--cw:min(68px, 16vw);display:flex;flex-direction:column;gap:16px;align-items:center}
@@ -279,7 +278,6 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .card.lifted{opacity:.22}
 [data-drop]{border-radius:12px;transition:box-shadow .12s, transform .12s}
 [data-drop].over{box-shadow:0 0 0 4px var(--butter), 0 0 0 7px var(--ink);transform:scale(1.04)}
-@keyframes land{from{transform:scale(1.35) rotate(-8deg)}to{transform:scale(1.04)}}
 @keyframes bang{from{transform:scale(.4) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes nope{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 .flash{animation:nope .4s}
@@ -400,7 +398,7 @@ function Motion(wrap){
       const [sx,sy] = centre(to.getBoundingClientRect()); let n = 0;
       snap.forEach((w, id) => {
         if(seen.has(id) || !w.r.width) return;
-        const g = w.el; g.classList.remove('abs','sel','live','can','land');
+        const g = w.el; g.classList.remove('abs','sel','live','can');
         g.style.cssText = `position:absolute;margin:0;left:${w.r.left}px;top:${w.r.top}px;--cw:${w.r.width}px`;
         fxl().appendChild(g);
         const [x,y] = centre(w.r), d = 300 + Math.min(200, Math.hypot(sx-x, sy-y)*.25), delay = (n++)*35;
@@ -507,7 +505,7 @@ const GAMES = {
     rules:`<p>Everyone gets two private cards; five shared cards come out over the flop (3), turn (1) and river (1). Make the best five-card hand from any of your seven.</p><p>Each round you can fold, check or call, or bet and raise. Use the slider or the quick sizes for raises. Blinds are 10 and 20 and everyone starts with 1,000. Knock out all three computer players to clear the table.</p>`,
     make: Holdem },
   ratscrew: { name:'Ratscrew', glyph:'SLAP', red:false, players:'Real-time · you vs computer', blurb:'Flip, fight with face cards, slap doubles and sandwiches.',
-    rules:`<p>Take turns flipping your top card onto the pile. When someone flips a face card or Ace, the other player gets 1 chance for a Jack, 2 for a Queen, 3 for a King or 4 for an Ace to flip a face card of their own. If they can't, the face-card player takes the pile.</p><p>Anyone can slap the pile at any time when the top two cards match (a double) or the top and third cards match (a sandwich). First slap takes the pile. A wrong slap costs you a card. Win by holding all 52.</p><p>Keys: Enter flips, Space slaps.</p>`,
+    rules:`<p>Take turns flipping your top card onto the pile. When someone flips a face card or Ace, the other player gets 1 chance for a Jack, 2 for a Queen, 3 for a King or 4 for an Ace to flip a face card of their own. If they can't, the face-card player takes the pile.</p><p>Anyone can slap the pile at any time when the top two cards match (a double) or the top and third cards match (a sandwich). First slap takes the pile. A wrong slap costs you a card. Win by holding all 52.</p><p>A wrong slap costs a card and keeps your hand off the pile for a moment. Keys: Enter flips, Space slaps.</p>`,
     make: Ratscrew },
   gin: { name:'Gin Rummy', glyph:'GIN', red:true, players:'You vs computer · to 100', blurb:'Draw, discard and build sets and runs. Knock low or go gin.',
     rules:`<p>You each get 10 cards. On your turn, draw from the deck or take the top discard, then throw one card away. Build melds: sets of 3 or 4 of the same rank, or runs of 3+ in one suit (Ace is low). Cards not in a meld are deadwood: Aces 1, number cards face value, faces 10.</p><p>Once your deadwood is 10 or less you can knock to end the hand. Your opponent can lay off cards onto your melds. Lower deadwood scores the difference. If they tie or beat you, that's an undercut and they get a 25 bonus. Knock with zero deadwood for gin: 25 plus their deadwood, no lay-offs. First to 100 wins.</p><p>To discard, pick a card and tap the discard pile, or drag the card onto it. Your hand groups itself: yellow trays are melds, the dashed tray is deadwood.</p>`,
@@ -1775,6 +1773,10 @@ function Golf(root, ui){
 // ======================= EGYPTIAN RATSCREW =======================
 function Ratscrew(root, ui){
   const wrap = h('div','rat'); root.appendChild(wrap);
+  const fx = Motion(wrap);
+  // Hands need a moment to come back after a slap; a wrong slap keeps them off the pile a bit longer.
+  const SLAP_GAP = 320, BAD_SLAP = 900;
+  let slapAt = 0, slapLock = 0;
   const CHANCES = {1:4, 11:1, 12:2, 13:3};
   let hands, pile, turn, chances, challenger, over, msg, pv, timers=[], react=750, keyH=null, started=false;
   const later = (fn, ms) => { const t=setTimeout(fn, ms); timers.push(t); return t; };
@@ -1783,7 +1785,7 @@ function Ratscrew(root, ui){
     clear();
     if(!started){ return picker(); }
     const d = shuffle(makeDeck()).map(c => ({...c, up:true}));
-    hands=[d.slice(0,26), d.slice(26)]; pile=[]; turn=0; chances=null; challenger=null; over=false; pv=0;
+    hands=[d.slice(0,26), d.slice(26)]; pile=[]; turn=0; chances=null; challenger=null; over=false; pv=0; slapAt=0; slapLock=0;
     msg='Your flip. Slap doubles (7, 7) and sandwiches (7, 2, 7) before the computer does.';
     bindKeys(); render();
   }
@@ -1798,7 +1800,7 @@ function Ratscrew(root, ui){
   function flip(p){
     if(over || turn!==p) return;
     if(!hands[p].length) return finish(1-p);
-    const c = hands[p].shift(); pile.push(c); pv++;
+    const c = hands[p].shift(); c.by = p; pile.push(c); pv++;
     if(CHANCES[c.r]){ chances=CHANCES[c.r]; challenger=p; turn=1-p; msg = `${p===0?'You':'Computer'} played a${c.r===1?'n Ace':' '+({11:'Jack',12:'Queen',13:'King'})[c.r]}. ${p===0?'Computer has':'You have'} ${chances} ${chances===1?'chance':'chances'} to answer with a face card.`; }
     else if(challenger!=null){
       chances--;
@@ -1810,16 +1812,21 @@ function Ratscrew(root, ui){
     afterChange();
   }
   function take(p, why){
-    hands[p].push(...pile); pile=[]; chances=null; challenger=null; turn=p; pv++;
+    hands[p].push(...pile); pile=[]; chances=null; challenger=null; turn=p; pv++; fx.sweep('d'+p);
     msg = `${why} ${p===0?'You':'Computer'} now hold${p===0?'':'s'} ${hands[p].length}.`;
     if(!hands[1-p].length) return finish(p);
     afterChange();
   }
   function slap(p){
     if(over || !pile.length) return;
+    if(p===0){ const t=performance.now(); if(t < slapAt + SLAP_GAP || t < slapLock) return; slapAt = t; }
     const kind = slappable();
     if(kind) return take(p, `${kind}! ${p===0?'You':'Computer'} slapped first.`);
-    if(p===0){ if(hands[0].length){ pile.unshift(hands[0].shift()); msg='Bad slap. One of your cards goes under the pile.'; pv++; render(); } else finish(1); }
+    if(p===0){
+      slapLock = performance.now() + BAD_SLAP;
+      if(hands[0].length){ pile.unshift(hands[0].shift()); msg='Bad slap. One of your cards goes under the pile, and your hand is off the table for a moment.'; pv++; afterChange(); later(() => { if(!over) render(); }, BAD_SLAP + 20); }
+      else finish(1);
+    }
   }
   function finish(w){ over=true; clear(); msg = w===0 ? '<span class="win">The computer is out of cards. You win!</span>' : '<span class="lose">You ran out of cards. The computer wins.</span>'; render(); }
   function afterChange(){
@@ -1830,24 +1837,30 @@ function Ratscrew(root, ui){
   }
   function bindKeys(){
     if(keyH) return;
-    keyH = e => { if(e.code==='Space' || e.key==='s'){ e.preventDefault(); slap(0); } else if(e.key==='Enter' || e.key==='f'){ e.preventDefault(); flip(0); } };
+    keyH = e => { if(e.repeat) { if(e.code==='Space') e.preventDefault(); return; }
+      if(e.code==='Space' || e.key==='s'){ e.preventDefault(); slap(0); } else if(e.key==='Enter' || e.key==='f'){ e.preventDefault(); flip(0); } };
     window.addEventListener('keydown', keyH);
   }
-  function render(){
+  const deck = (p, label) => {
+    const m = h('div','sp-meta'); const d = h('div','sp-draw'); d.dataset.anchor = 'd'+p;
+    d.append(hands[p].length ? cardEl({}, false) : h('div','slot')); m.append(d, h('span','pill', `${label} · ${hands[p].length} cards`)); return m;
+  };
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
-    wrap.appendChild(h('div','sp-meta', `<span class="pill">Computer · ${hands[1].length} cards</span>`));
+    wrap.appendChild(deck(1, 'Computer'));
     const p = h('div','rat-pile');
     const shown = pile.slice(-3);
     if(!shown.length) p.appendChild(h('div','slot'));
-    shown.forEach((c,i) => { const el=cardEl(c); el.classList.add('abs'); el.style.left=`calc(var(--cw) * ${i*0.42})`; el.style.transform=`rotate(${[-6,3,-2][i]}deg)`; if(i===shown.length-1) el.classList.add('land'); p.appendChild(el); });
+    shown.forEach((c,i) => { const el=cardEl(c); el.classList.add('abs'); el.style.left=`calc(var(--cw) * ${i*0.42})`; el.style.rotate=`${[-6,3,-2][i]}deg`; el.dataset.from = 'd'+(c.by||0); p.appendChild(el); });
     p.addEventListener('pointerdown', e => { e.preventDefault(); slap(0); });
     wrap.appendChild(p);
     wrap.appendChild(h('div','label', `${pile.length} in the pile${chances!=null && turn!=null ? ` · ${chances} ${chances===1?'chance':'chances'} left` : ''}`));
     const ctr = h('div','controls');
     const f = h('button','btn primary big','Flip'); f.disabled = over || turn!==0; f.addEventListener('click',()=>flip(0));
-    const s = h('button','btn hot big','Slap!'); s.disabled = over || !pile.length; s.addEventListener('pointerdown', e => { e.preventDefault(); slap(0); });
+    const s = h('button','btn hot big','Slap!'); s.disabled = over || !pile.length || performance.now() < slapLock; s.addEventListener('pointerdown', e => { e.preventDefault(); slap(0); });
     ctr.append(f, s); wrap.appendChild(ctr);
-    wrap.appendChild(h('div','sp-meta', `<span class="pill">You · ${hands[0].length} cards</span><kbd>Enter flips · Space slaps · or tap the pile</kbd>`));
+    const mine = deck(0, 'You'); mine.appendChild(h('kbd', null, 'Enter flips · Space slaps · or tap the pile')); wrap.appendChild(mine);
     if(over){ const b=h('button','btn primary','Play again'); b.addEventListener('click', newGame); wrap.appendChild(b); }
     ui.status(msg);
   }
