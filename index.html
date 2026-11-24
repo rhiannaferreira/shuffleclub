@@ -249,6 +249,12 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .gin-group.dead{background:#15131c40;border:2px dashed #ffffff55}
 .gin .live{box-shadow:0 0 0 3px var(--butter), 3px 4px 0 var(--ink)}
 .gin .card.sel{transform:translateY(-12px)}
+.fx-layer{position:fixed;inset:0;pointer-events:none;z-index:60}
+.fx-layer .card{position:absolute}
+.drag-ghost{position:fixed;z-index:70;pointer-events:none;filter:drop-shadow(5px 9px 0 #15131c55)}
+.card.lifted{opacity:.22}
+[data-drop]{border-radius:12px;transition:box-shadow .12s, transform .12s}
+[data-drop].over{box-shadow:0 0 0 4px var(--butter), 0 0 0 7px var(--ink);transform:scale(1.04)}
 @keyframes land{from{transform:scale(1.35) rotate(-8deg)}to{transform:scale(1.04)}}
 @keyframes bang{from{transform:scale(.4) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes nope{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
@@ -299,12 +305,16 @@ function makeDeck(n = 1){ const d=[]; for(let k=0;k<n;k++) for(const s of SUITS)
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function cardEl(c, up = c.up){
   const el = document.createElement('div');
-  if(!up){ el.className='card back'; el.setAttribute('aria-label','face-down card'); return el; }
-  el.className = 'card' + (isRed(c.s) ? ' red' : '');
-  const L = rankLabel(c.r);
-  const big = c.r > 10 ? `<span class="big court">${L}</span>` : `<span class="big${c.r===1?' ace':''}">${c.s}${T}</span>`;
-  el.innerHTML = `<span class="idx">${L}<b>${c.s}${T}</b></span>${big}`;
-  el.setAttribute('aria-label', `${L} of ${c.s}`);
+  const id = cidOf(c);
+  if(!up){ el.className='card back'; el.setAttribute('aria-label','face-down card'); }
+  else {
+    el.className = 'card' + (isRed(c.s) ? ' red' : '');
+    const L = rankLabel(c.r);
+    const big = c.r > 10 ? `<span class="big court">${L}</span>` : `<span class="big${c.r===1?' ace':''}">${c.s}${T}</span>`;
+    el.innerHTML = `<span class="idx">${L}<b>${c.s}${T}</b></span>${big}`;
+    el.setAttribute('aria-label', `${L} of ${c.s}`);
+  }
+  if(id){ el.dataset.cid = id; if(lifted.has(id)) el.classList.add('lifted'); }
   return el;
 }
 const h = (tag, cls, html) => { const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; };
@@ -312,6 +322,149 @@ const store = {
   get(k, d){ try{ const v=localStorage.getItem('shuffle:'+k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem('shuffle:'+k, JSON.stringify(v)); }catch(e){} }
 };
+// ---------- Card motion ----------
+// Tables re-render from scratch, so cards move FLIP-style: note where every known card sits, rebuild,
+// then fly each card from its old spot to its new one. A card that wasn't on the table yet flies in
+// from the element named by its data-from (a deck, a draw pile). Nothing ever just appears.
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const lifted = new Set();      // card ids being dragged (drawn faded in place)
+const flyFrom = new Map();     // card id -> rect it should start from on the next frame (a drag release)
+let cidN = 0;
+const cidOf = c => (c && c.s) ? (c._id || (c._id = 'k' + (++cidN))) : null;
+const centre = r => [r.left + r.width/2, r.top + r.height/2];
+let fxLayer = null;
+const fxl = () => { if(!fxLayer || !fxLayer.isConnected){ fxLayer = document.createElement('div'); fxLayer.className = 'fx-layer'; document.body.appendChild(fxLayer); } return fxLayer; };
+const EASE = 'cubic-bezier(.2,.75,.25,1)';
+
+function Motion(wrap){
+  let snap = new Map(), until = 0, stagger = 0, sink = null;
+  function capture(){
+    snap = new Map();
+    wrap.querySelectorAll('[data-cid]').forEach(el => snap.set(el.dataset.cid, {r:el.getBoundingClientRect(), up:!el.classList.contains('back'), el}));
+  }
+  function fly(el, from, delay, flip){
+    const to = el.getBoundingClientRect(); if(!to.width || !from.width) return;
+    const [fx,fy] = centre(from), [tx,ty] = centre(to);
+    const dx = fx-tx, dy = fy-ty, s = from.width/to.width;
+    if(Math.abs(dx)<1 && Math.abs(dy)<1 && Math.abs(s-1)<.02 && !flip) return;
+    const dur = Math.round(Math.min(480, 230 + Math.hypot(dx,dy)*.3));
+    const start = `translate(${dx}px,${dy}px) scale(${s})`;
+    const frames = flip
+      ? [{transform:start}, {transform:`translate(${dx/2}px,${dy/2}px) scale(${(s+1)/2}) scaleX(.04)`, offset:.45}, {transform:'translate(0,0)'}]
+      : [{transform:start}, {transform:'translate(0,0)'}];
+    el.style.zIndex = 30;
+    const a = el.animate(frames, {duration:dur, delay, easing:EASE, fill:'backwards', composite:'add'});
+    a.onfinish = a.oncancel = () => { el.style.zIndex = ''; };
+    until = Math.max(until, performance.now() + delay + dur);
+  }
+  function after(){
+    if(reducedMotion.matches){ flyFrom.clear(); return; }
+    const anchors = {}; wrap.querySelectorAll('[data-anchor]').forEach(a => { anchors[a.dataset.anchor] = a; });
+    const fresh = [], seen = new Set();
+    wrap.querySelectorAll('[data-cid]').forEach((el, n) => {
+      const id = el.dataset.cid, was = snap.get(id), drop = flyFrom.get(id); seen.add(id);
+      if(drop){ flyFrom.delete(id); fly(el, drop, 0, false); }
+      else if(was) fly(el, was.r, 0, was.up === el.classList.contains('back'));
+      else if(el.dataset.from && anchors[el.dataset.from]) fresh.push([el, el.dataset.order != null ? +el.dataset.order : n]);
+    });
+    fresh.sort((a,b) => a[1]-b[1]).forEach(([el], n) =>
+      fly(el, anchors[el.dataset.from].getBoundingClientRect(), n*stagger, !el.classList.contains('back')));
+    // Cards that left the table can be swept into a pile (a won trick, a collected stack).
+    const to = sink && anchors[sink];
+    if(to){
+      const [sx,sy] = centre(to.getBoundingClientRect()); let n = 0;
+      snap.forEach((w, id) => {
+        if(seen.has(id) || !w.r.width) return;
+        const g = w.el; g.classList.remove('abs','sel','live','can','land');
+        g.style.cssText = `position:absolute;margin:0;left:${w.r.left}px;top:${w.r.top}px;--cw:${w.r.width}px`;
+        fxl().appendChild(g);
+        const [x,y] = centre(w.r), d = 300 + Math.min(200, Math.hypot(sx-x, sy-y)*.25), delay = (n++)*35;
+        const a = g.animate([{transform:'none', opacity:1}, {transform:`translate(${sx-x}px,${sy-y}px) scale(.85) rotate(${n%2?6:-6}deg)`, opacity:.2}], {duration:d, delay, easing:EASE, fill:'both'});
+        a.onfinish = a.oncancel = () => g.remove();
+        until = Math.max(until, performance.now() + delay + d);
+      });
+    }
+  }
+  return {
+    // Rebuild the table inside `paint`, animating everything that moved.
+    run(paint){ capture(); paint(); after(); stagger = 0; sink = null; snap = new Map(); },
+    deal(ms){ stagger = ms; },          // next frame: fresh cards leave their pile one after another
+    sweep(anchor){ sink = anchor; },    // next frame: cards that vanish slide into this anchor
+    left(){ return Math.max(0, until - performance.now()); },
+    busy(){ return performance.now() < until; },
+    reset(){ until = 0; }
+  };
+}
+
+// Press a card and drag it onto anything marked [data-drop]. A press that barely moves is a tap.
+// o.tap(), o.drop(key, rect) -> true if the move was legal, o.can() -> may this card be picked up now,
+// o.group() -> the elements that travel together (a run of cards in solitaire).
+function dragCard(el, o){
+  el.style.touchAction = 'none';
+  if(!el.hasAttribute('tabindex')) el.tabIndex = 0;
+  el.addEventListener('keydown', e => { if((e.key==='Enter' || e.key===' ') && o.tap){ e.preventDefault(); e.stopPropagation(); o.tap(); } });
+  el.addEventListener('pointerdown', e => {
+    if(e.button > 0 || (o.can && !o.can())) return;
+    e.preventDefault(); e.stopPropagation();
+    const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
+    const els = o.group ? o.group() : [el];
+    const rects = els.map(x => x.getBoundingClientRect()), ids = els.map(x => x.dataset.cid);
+    const turned = !!el.closest('.flip');
+    let ghost = null, over = null, targets = [], lastX = sx;
+    const hit = (x, y) => {
+      let best = null, bd = Infinity;
+      for(const [t, r] of targets){
+        const pad = 22; if(x < r.left-pad || x > r.right+pad || y < r.top-pad || y > r.bottom+pad) continue;
+        const [cx, cy] = centre(r), d = Math.hypot(x-cx, y-cy); if(d < bd){ bd = d; best = t; }
+      }
+      return best;
+    };
+    const move = ev => {
+      if(ev.pointerId !== pid) return;
+      const dx = ev.clientX-sx, dy = ev.clientY-sy;
+      if(!ghost){
+        if(Math.hypot(dx, dy) < 8) return;
+        ghost = document.createElement('div'); ghost.className = 'drag-ghost';
+        ghost.style.left = rects[0].left + 'px'; ghost.style.top = rects[0].top + 'px';
+        els.forEach((x, n) => {
+          const c = x.cloneNode(true); c.classList.remove('sel','live','can','lifted','reach'); c.removeAttribute('data-cid');
+          const r = rects[n];
+          c.style.cssText = `position:absolute;margin:0;left:${r.left-rects[0].left}px;top:${r.top-rects[0].top}px;--cw:${r.width}px;${turned?'transform:rotate(180deg)':''}`;
+          ghost.appendChild(c);
+        });
+        fxl().appendChild(ghost);
+        ids.forEach(i => i && lifted.add(i)); els.forEach(x => x.classList.add('lifted'));
+        targets = [...document.querySelectorAll('[data-drop]')].map(t => [t, t.getBoundingClientRect()]);
+      }
+      const tilt = Math.max(-7, Math.min(7, (ev.clientX - lastX) * .8)); lastX = ev.clientX;
+      ghost.style.transform = `translate(${dx}px,${dy}px) rotate(${tilt}deg) scale(1.05)`;
+      const t = hit(ev.clientX, ev.clientY);
+      if(t !== over){ if(over) over.classList.remove('over'); over = t; if(t) t.classList.add('over'); }
+    };
+    const end = ev => {
+      if(ev.pointerId !== pid) return;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end);
+      if(!ghost){ if(ev.type === 'pointerup' && o.tap) o.tap(); return; }
+      if(over) over.classList.remove('over');
+      ids.forEach(i => i && lifted.delete(i));
+      const gr = [...ghost.children].map(c => c.getBoundingClientRect());
+      let ok = false;
+      if(over && ev.type === 'pointerup'){
+        ids.forEach((i, n) => i && flyFrom.set(i, gr[n]));
+        ok = !!o.drop(over.dataset.drop, gr[0]);
+        ids.forEach(i => i && flyFrom.delete(i));
+      }
+      if(ok){ ghost.remove(); return; }
+      // Not a legal spot: the card goes back where it came from.
+      const home = ids.map(i => i && document.querySelector(`#board [data-cid="${i}"]`)).filter(Boolean);
+      home.forEach(x => x.classList.add('lifted'));
+      const r = home[0] ? home[0].getBoundingClientRect() : rects[0];
+      const a = ghost.animate([{transform:ghost.style.transform}, {transform:`translate(${r.left-rects[0].left}px,${r.top-rects[0].top}px)`}], {duration:220, easing:EASE, fill:'forwards'});
+      a.onfinish = a.oncancel = () => { ghost.remove(); home.forEach(x => x.classList.remove('lifted')); };
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+  });
+}
 // Online play. Uses direct peer-to-peer tables (js/net.js); falls back to the claude.ai live room
 // when the page runs as an artifact there. Resolves to null when neither is available.
 let roomP = null;
