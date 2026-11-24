@@ -158,6 +158,9 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .bj-shoe{--cw:34px;position:absolute;right:0;top:0;transform:rotate(8deg)}
 .bj-tray{position:absolute;left:0;top:0;width:34px;height:48px;border:2px dashed #ffffff33;border-radius:5px;transform:rotate(-6deg)}
 .felt{position:relative}
+.stack{position:relative;width:var(--cw);height:calc(var(--cw) * 1.4)}
+.stack .card{position:absolute;left:0;top:0}
+.stack .under{filter:brightness(.92)}
 /* Memory */
 .mem{--cw:min(84px, calc((min(100vw, 780px) - 32px - 3 * 10px) / 4));display:grid;grid-template-columns:repeat(4,var(--cw));gap:10px;justify-content:center}
 .mem .card{cursor:pointer}
@@ -515,7 +518,7 @@ const GAMES = {
     rules:`<p>You each have six cards face down in two rows. Turn two over to start. On your turn, draw from the deck or take the top discard, then swap it for any card in your grid. A card drawn from the deck can be thrown away instead, and then you turn one face-down card over.</p><p>When someone has all six cards face up, the other player gets one last turn. Scoring: Ace 1, number cards face value, 2s are minus 2, Jacks and Queens 10, Kings 0. Two matching cards in the same column score 0. Lowest total after nine holes wins.</p>`,
     make: Golf },
   eights: { name:'Crazy Eights', glyph:'8', red:true, players:'You vs computer', blurb:'Match suit or rank. Eights are wild.',
-    rules:`<p>Play a card that matches the top of the discard pile by suit or rank. Any 8 can be played at any time, and you choose the next suit. If you can't play, draw from the deck; once you've drawn, you may pass.</p><p>First player to get rid of every card wins.</p>`,
+    rules:`<p>Play a card that matches the top of the discard pile by suit or rank: tap it, or drag it onto the pile. Any 8 can be played at any time, and you choose the next suit. If you can't play, tap the deck to draw; once you've drawn, you may pass.</p><p>First player to get rid of every card wins.</p>`,
     make: Eights },
   war: { name:'War', glyph:'VS', players:'You vs computer', blurb:'Flip, compare, collect. Ties start a war.',
     rules:`<p>The deck is split in half. Each round both players flip their top card and the higher rank takes both (Aces are high). On a tie, each player lays three cards face down and one face up; the higher face-up card wins the whole pile.</p><p>Collect all 52 cards to win.</p>`,
@@ -1243,78 +1246,100 @@ function War(root, ui){
 }
 
 // ======================= CRAZY EIGHTS =======================
+// A face-up pile with the previous card peeking out underneath, so a new card has something to land on.
+function pileEl(cards, opts={}){
+  const st = h('div','stack');
+  const n = cards.length, tilt = c => (((c.r*7 + SUITS.indexOf(c.s)*5) % 9) - 4) * .8;
+  if(n>1){ const u = cardEl(cards[n-2], true); u.classList.add('under'); u.style.rotate = `${tilt(cards[n-2])}deg`; st.appendChild(u); }
+  if(n){ const t = cardEl(cards[n-1], true); t.style.rotate = `${tilt(cards[n-1])}deg`; if(opts.from) t.dataset.from = opts.from; if(opts.order!=null) t.dataset.order = opts.order; st.appendChild(t); }
+  else st.appendChild(h('div','slot'));
+  return st;
+}
 function Eights(root, ui){
-  let stock, discard, P, C, suit, turn, drew, choosing, over, msg, busy;
+  let stock, discard, P, C, suit, turn, drew, choosing, over, msg, timer;
   const wrap = h('div','felt'); wrap.style.setProperty('--cw','min(72px, 17vw)'); root.appendChild(wrap);
+  const fx = Motion(wrap);
+  const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
   const top = () => discard[discard.length-1];
   const playable = c => c.r===8 || c.s===suit || c.r===top().r;
   function newGame(){
-    stock = shuffle(makeDeck()); P=stock.splice(0,7); C=stock.splice(0,7);
+    clearTimeout(timer);
+    stock = shuffle(makeDeck()); C=[]; P=[];
+    for(let k=0;k<7;k++){ C.push(stock.pop()); P.push(stock.pop()); }
     P.forEach(c=>c.up=true);
     let first = stock.pop(); while(first.r===8){ stock.unshift(first); first=stock.pop(); }
-    first.up=true; discard=[first]; suit=first.s; turn='p'; drew=0; choosing=false; over=false; busy=false;
-    sortHand(); msg='Your turn. Match the suit or rank.'; render();
+    first.up=true; discard=[first]; suit=first.s; turn='p'; drew=0; choosing=false; over=false;
+    sortHand(); msg='Your turn. Match the suit or rank.';
+    wrap.innerHTML=''; fx.deal(60); render();
   }
   function sortHand(){ P.sort((a,b)=> SUITS.indexOf(a.s)-SUITS.indexOf(b.s) || a.r-b.r); }
   function refill(){ if(stock.length) return true; if(discard.length<=1) return false; const t=discard.pop(); stock=shuffle(discard.map(c=>(c.up=false,c))); discard=[t]; return true; }
-  function play(i, el){
-    if(turn!=='p' || choosing || over) return;
-    const c=P[i]; if(!playable(c)){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); return; }
-    P.splice(i,1); discard.push(c);
-    if(c.r===8 && P.length){ choosing=true; msg='Eight! Choose the next suit.'; return render(); }
-    suit=c.s; endPlayer();
+  const ready = () => turn==='p' && !choosing && !over && !fx.busy();
+  function play(c, el){
+    if(!ready()) return false;
+    if(!playable(c)){ if(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } return false; }
+    P.splice(P.indexOf(c),1); discard.push(c);
+    if(c.r===8 && P.length){ choosing=true; msg='Eight! Choose the next suit.'; render(); return true; }
+    suit=c.s; endPlayer(); return true;
   }
   function chooseSuit(s){ suit=s; choosing=false; endPlayer(); }
   function drawCard(){
-    if(turn!=='p' || choosing || over) return;
+    if(!ready()) return;
     if(!refill()){ msg='The deck is empty. Pass your turn.'; drew=Math.max(drew,1); return render(); }
     const c=stock.pop(); c.up=true; P.push(c); drew++; sortHand();
     msg = playable(c) ? `You drew the ${rankLabel(c.r)}${c.s}. You can play it.` : `You drew the ${rankLabel(c.r)}${c.s}.`; render();
   }
-  function pass(){ if(turn!=='p' || !drew) return; msg='You passed.'; endPlayer(true); }
-  function endPlayer(passed){
+  function pass(){ if(turn!=='p' || !drew || choosing || over) return; msg='You passed.'; endPlayer(true); }
+  function endPlayer(){
     if(!P.length){ over=true; msg='<span class="win">You played your last card. You win!</span>'; return render(); }
     turn='c'; drew=0; render();
-    setTimeout(cpu, 750);
+    later(() => cpuStep(0), 800);
   }
-  function cpu(){
+  // The computer plays like a person: draws one card at a time until something fits.
+  function cpuStep(drawn){
     if(over) return;
-    let drawn=0;
-    let pick = () => { const non8 = C.filter(c=>c.r!==8 && playable(c)); non8.sort((a,b)=> (b.s===suit)-(a.s===suit)); return non8[0] || C.find(c=>c.r===8); };
-    let c = pick();
-    while(!c && refill()){ const d=stock.pop(); C.push(d); drawn++; if(playable(d)) c=d; }
+    const non8 = C.filter(c=>c.r!==8 && playable(c)).sort((a,b)=> (b.s===suit)-(a.s===suit));
+    const c = non8[0] || C.find(c=>c.r===8);
     const drewTxt = drawn ? `Computer drew ${drawn}. ` : '';
-    if(c){
+    if(!c){
+      if(refill()){ C.push(stock.pop()); msg = drawn ? `Computer draws again…` : 'Computer draws…'; render(); return later(() => cpuStep(drawn+1), 620); }
+      msg=`${drewTxt}Computer passed.`;
+    } else {
       C.splice(C.indexOf(c),1); c.up=true; discard.push(c);
       if(c.r===8){ const counts={}; C.forEach(x=>{ if(x.r!==8) counts[x.s]=(counts[x.s]||0)+1; }); suit = Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0] || SUITS[Math.floor(Math.random()*4)]; msg=`${drewTxt}Computer played an 8 and chose ${suit}.`; }
       else { suit=c.s; msg=`${drewTxt}Computer played ${rankLabel(c.r)}${c.s}.`; }
-    } else msg=`${drewTxt}Computer passed.`;
+    }
     if(!C.length){ over=true; msg='<span class="lose">The computer went out first.</span>'; return render(); }
     turn='p'; msg += ' Your turn.'; render();
   }
-  function render(){
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
     const cs=h('div','seat'); cs.appendChild(h('div','label', `Computer · <span class="total">${C.length}</span> cards`));
-    const ch=h('div','hand overlap'); C.forEach(c=>ch.appendChild(cardEl(c, over))); cs.appendChild(ch); wrap.appendChild(cs);
+    const ch=h('div','hand overlap'); C.forEach((c,i)=>{ const el=cardEl(c, over); el.dataset.from='stock'; el.dataset.order=i*2; ch.appendChild(el); }); cs.appendChild(ch); wrap.appendChild(cs);
     const mid=h('div','mid');
     const st = stock.length ? cardEl({}, false) : h('div','slot','↻');
     st.style.cursor = turn==='p' && !over ? 'pointer' : 'default';
     st.setAttribute('role','button'); st.setAttribute('aria-label','Draw a card');
     st.addEventListener('click', drawCard);
-    const stw=h('div','seat'); stw.style.width='auto'; stw.append(st, h('div','label', `${stock.length} in deck`));
-    const dw=h('div','seat'); dw.style.width='auto'; dw.append(cardEl(top()), h('div','suitbadge', `Suit <span class="${isRed(suit)?'r':''}">${suit}</span>`));
+    const stw=h('div','seat'); stw.style.width='auto'; stw.dataset.anchor='stock'; stw.append(st, h('div','label', `${stock.length} in deck`));
+    const dw=h('div','seat'); dw.style.width='auto'; dw.dataset.drop='disc';
+    dw.append(pileEl(discard, {from:'stock', order:20}), h('div','suitbadge', `Suit <span class="${isRed(suit)?'r':''}">${suit}</span>`));
     mid.append(stw, dw); wrap.appendChild(mid);
     if(choosing){ const sp=h('div','suitpick'); SUITS.forEach(s=>{ const b=h('button', isRed(s)?'r':'', s); b.setAttribute('aria-label','Choose '+s); b.addEventListener('click',()=>chooseSuit(s)); sp.appendChild(b); }); wrap.appendChild(sp); }
     const ps=h('div','seat'); ps.appendChild(h('div','label', `You · <span class="total">${P.length}</span> cards`));
     const ph=h('div','hand wrapgap');
-    P.forEach((c,i)=>{ const el=cardEl(c); const ok = turn==='p' && !choosing && !over && playable(c); el.classList.add(ok?'can':'dim'); if(turn!=='p'||over) el.classList.remove('dim'); el.addEventListener('click',()=>play(i,el)); ph.appendChild(el); });
+    P.forEach((c,i)=>{ const el=cardEl(c); el.dataset.from='stock'; el.dataset.order=i*2+1;
+      if(turn==='p' && !choosing && !over) el.classList.add(playable(c)?'can':'dim');
+      dragCard(el, { can: () => turn==='p' && !choosing && !over, tap: () => play(c, el), drop: () => play(c, null) });
+      ph.appendChild(el); });
     ps.appendChild(ph); wrap.appendChild(ps);
     const ctr=h('div','controls');
     const pb=h('button','btn','Pass'); pb.disabled = turn!=='p' || !drew || choosing || over; pb.addEventListener('click',()=>pass());
     ctr.appendChild(pb); wrap.appendChild(ctr);
-    ui.status(turn==='c' && !over ? 'Computer is thinking…' : msg);
+    ui.status(turn==='c' && !over ? (msg && msg.startsWith('Computer draws') ? msg : 'Computer is thinking…') : msg);
   }
-  return { newGame };
+  return { newGame, stop(){ clearTimeout(timer); } };
 }
 
 // ======================= MEMORY =======================
