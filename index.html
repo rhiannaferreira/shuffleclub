@@ -162,8 +162,9 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .stack .card{position:absolute;left:0;top:0}
 .stack .under{filter:brightness(.92)}
 /* Memory */
-.mem{--cw:min(84px, calc((min(100vw, 780px) - 32px - 3 * 10px) / 4));display:grid;grid-template-columns:repeat(4,var(--cw));gap:10px;justify-content:center}
+.mem{--cw:min(84px, calc((min(100vw, 780px) - 32px - 3 * 10px) / 4));position:relative;display:grid;grid-template-columns:repeat(4,var(--cw));gap:10px;justify-content:center}
 .mem .card{cursor:pointer}
+.mem-deck{position:absolute;left:50%;top:50%;width:2px;height:2px;pointer-events:none}
 .mem .card.done{opacity:.3;cursor:default}
 
 /* ---------- Speed ---------- */
@@ -1344,13 +1345,14 @@ function Eights(root, ui){
 
 // ======================= MEMORY =======================
 function Memory(root, ui){
-  let cards, open, moves, lock, start, timer, done, best=store.get('mem-best', null);
+  let cards, open, moves, lock, start, timer, done, flipBack, best=store.get('mem-best', null);
   const grid = h('div','mem'); root.appendChild(grid);
+  const fx = Motion(grid);
   function newGame(){
-    clearInterval(timer); timer=null; start=null;
+    clearInterval(timer); clearTimeout(flipBack); timer=null; start=null;
     const picks = shuffle(makeDeck()).filter((c,i,a)=> a.findIndex(x=>x.r===c.r)===i).slice(0,8);
     cards = shuffle([...picks, ...picks].map((c,id)=>({c:{...c, up:true}, key:c.s+c.r, state:'down', id})));
-    open=[]; moves=0; lock=false; done=false; render();
+    open=[]; moves=0; lock=false; done=false; grid.innerHTML=''; fx.deal(45); render();
   }
   const secs = () => start ? Math.floor((Date.now()-start)/1000) : 0;
   const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
@@ -1363,7 +1365,7 @@ function Memory(root, ui){
       const [a,b]=open;
       if(a.key===b.key){ a.state=b.state='done'; open=[];
         if(cards.every(x=>x.state==='done')){ done=true; clearInterval(timer); if(best==null || moves<best){ best=moves; store.set('mem-best',best); } } }
-      else { lock=true; setTimeout(()=>{ a.state=b.state='down'; open=[]; lock=false; render(); }, 850); }
+      else { lock=true; clearTimeout(flipBack); flipBack=setTimeout(()=>{ a.state=b.state='down'; open=[]; lock=false; render(); }, 1000); }
     }
     render();
   }
@@ -1372,13 +1374,15 @@ function Memory(root, ui){
     ui.status(done ? `<span class="win">All pairs found in ${moves} moves and ${fmt(secs())}.</span> <span class="label" style="margin-left:auto">Best ${best} moves</span>`
       : `Moves <b>${moves}</b> · Pairs <b>${pairs}</b>/8 · Time <b>${fmt(secs())}</b>${best!=null?` <span class="label" style="margin-left:auto">Best ${best} moves</span>`:''}`);
   }
-  function render(){
+  const render = () => fx.run(paint);
+  function paint(){
     grid.innerHTML='';
-    cards.forEach((it,k)=>{ const el=cardEl(it.c, it.state!=='down'); if(it.state==='done') el.classList.add('done'); el.setAttribute('role','button'); el.tabIndex=0;
+    const deck = h('div','mem-deck'); deck.dataset.anchor='deck'; deck.dataset.point=''; grid.appendChild(deck);
+    cards.forEach((it,k)=>{ const el=cardEl(it.c, it.state!=='down'); el.dataset.from='deck'; if(it.state==='done') el.classList.add('done'); el.setAttribute('role','button'); el.tabIndex=0;
       el.addEventListener('click',()=>click(k)); el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); click(k);} }); grid.appendChild(el); });
     status();
   }
-  return { newGame, stop(){ clearInterval(timer); } };
+  return { newGame, stop(){ clearInterval(timer); clearTimeout(flipBack); } };
 }
 
 // ======================= TEXAS HOLD'EM =======================
