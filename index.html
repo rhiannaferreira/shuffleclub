@@ -175,21 +175,35 @@ details.rules p{margin:8px 0;max-width:65ch;color:var(--paper)}
 .code{font-family:var(--display);font-weight:900;font-size:64px;letter-spacing:.14em;color:var(--butter);line-height:1;text-shadow:3px 3px 0 var(--ink)}
 .sp-side{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%}
 .sp-side.flip{transform:rotate(180deg)}
-.sp-hand{display:grid;grid-template-columns:repeat(5,var(--cw));gap:10px;justify-content:center}
-.sp-hand .card{cursor:pointer}
+.sp-hand{display:grid;grid-template-columns:repeat(5,var(--cw));gap:10px;justify-content:center;min-height:calc(var(--cw) * 1.4)}
+.sp-hand .card{cursor:grab}
 .sp-hand .card.live{box-shadow:0 0 0 3px var(--butter), 3px 4px 0 var(--ink)}
+.sp-hand .card.sel{transform:translateY(-10px)}
+.sp-side.flip .sp-hand .card.sel{transform:translateY(-10px)}
 .sp-hand .card.nope{animation:nope .3s}
-.sp-meta{display:flex;align-items:center;gap:12px;font-weight:600;font-size:13px;color:var(--paper)}
+.sp-hand.fumble .card{filter:grayscale(.7) brightness(.8);cursor:not-allowed}
+.slot.gap{border-color:#ffffff26}
+.sp-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;font-weight:600;font-size:13px;color:var(--paper)}
 .sp-meta .pill{background:var(--ink);border-radius:999px;padding:2px 10px;font-variant-numeric:tabular-nums}
+.sp-meta .pill.bad{background:var(--tomato);color:var(--ink)}
 .sp-meta kbd{font:inherit;font-size:11px;color:var(--muted)}
-.sp-opp{display:flex;justify-content:center}
-.sp-opp .card{--cw:min(54px, 12vw)}
-.sp-opp .card + .card{margin-left:-20px}
+@media (hover:none){ .sp-meta kbd{display:none} }
+.sp-draw{--cw:30px;display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}
+.sp-draw .card{box-shadow:2px 2px 0 var(--ink)}
+.sp-draw .n{font-size:12px;min-width:2ch}
+.hint-toggle{background:none;border:2px solid #ffffff55;border-radius:999px;padding:0 9px;font-size:11.5px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
+.hint-toggle.on{background:var(--butter);border-color:var(--ink);color:var(--ink)}
+.sp-opp{--ow:min(54px, 12vw);display:grid;grid-template-columns:repeat(5,var(--ow));gap:6px;justify-content:center;min-height:calc(var(--ow) * 1.4)}
+.sp-opp .card,.sp-opp .slot{--cw:var(--ow)}
+.sp-opp .card{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+.sp-opp .card.reach{transform:translateY(16px) rotate(-5deg);box-shadow:0 0 0 3px var(--tomato), 3px 4px 0 var(--ink)}
 .sp-center{display:grid;grid-template-columns:repeat(4,var(--cw));gap:10px;justify-content:center;align-items:end;padding-block:6px}
 .sp-pile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
 .sp-pile .n{font-size:11px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
-.sp-pile.center .card,.sp-pile.center .slot{transform:scale(1.04)}
-.sp-pile .land{animation:land .22s cubic-bezier(.3,1.7,.6,1)}
+.sp-pile.center{cursor:pointer;padding:4px;margin:-4px}
+.sp-stack{position:relative;width:var(--cw);height:calc(var(--cw) * 1.4)}
+.sp-stack .card{position:absolute;left:0;top:0}
+.sp-stack .under{filter:brightness(.92)}
 .sp-banner{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;z-index:5}
 .sp-banner span{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:clamp(56px,16vw,120px);color:var(--butter);-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--tomato);animation:bang .4s cubic-bezier(.3,1.6,.5,1)}
 .sp-banner.small span{font-size:clamp(34px,9vw,64px)}
@@ -475,8 +489,8 @@ const getRoom = () => roomP || (roomP =
 
 // ---------- Games ----------
 const GAMES = {
-  speed: { name:'Speed', glyph:'±1', red:true, players:'Real-time · 2 players', blurb:'Slap cards one up or one down onto the centre. Fastest hands win.', hero:true,
-    rules:`<p>Both players race at once. Play any card from your five that is one higher or one lower than either centre pile (Aces wrap to Kings, suits don't matter). Your hand refills from your draw pile.</p><p>When nobody can move, both side piles flip a fresh card onto the centre. First to play out every card wins.</p><p>Tap a card to play it. On a keyboard, the bottom player uses keys 1 to 5 and the top player uses 6 to 0.</p>`,
+  speed: { name:'Speed', glyph:'±1', red:true, players:'Real-time · 2 players', blurb:'Lay cards one up or one down onto the centre. Quick hands, quicker eyes.', hero:true,
+    rules:`<p>Both players race at once. Play a card from your five onto a centre pile that is one higher or one lower (Aces wrap to Kings, suits don't matter). You choose the pile: drag the card onto it, or tap the card and then tap the pile.</p><p>Put a card on a pile it doesn't fit and you fumble: your hand freezes for a moment. After each play you pick up a replacement from your draw pile, one card at a time, so plan your next move while it lands.</p><p>When nobody can move, both side piles flip a fresh card onto the centre. First to play out every card wins.</p><p>Keyboard: 1 to 5 picks up a card, then ← or → (or A / D) lays it on the left or right pile. On one screen the top player uses 6 to 0, then J or L.</p>`,
     make: Speed },
   holdem: { name:"Texas Hold'em", glyph:'AK', red:true, players:'You vs 3 computer players', blurb:'No-limit poker. Two cards, five on the board, all the bluffing.',
     rules:`<p>Everyone gets two private cards; five shared cards come out over the flop (3), turn (1) and river (1). Make the best five-card hand from any of your seven.</p><p>Each round you can fold, check or call, or bet and raise. Use the slider or the quick sizes for raises. Blinds are 10 and 20 and everyone starts with 1,000. Knock out all three computer players to clear the table.</p>`,
@@ -546,29 +560,42 @@ window.addEventListener('hashchange', route);
 // ======================= SPEED =======================
 // Cards are encoded as numbers 0..51 (suit*13 + rank-1) so state is tiny enough to send over the room.
 const enc = c => SUITS.indexOf(c.s)*13 + c.r - 1;
-const dec = n => ({ s:SUITS[Math.floor(n/13)], r:n%13 + 1, up:true });
+const dec = n => ({ s:SUITS[Math.floor(n/13)], r:n%13 + 1, up:true, _id:'n'+n });
+// Speed runs on a physical clock, the same for you, a friend and the computer (all in ms):
+// a replacement card takes `refill` to pick up and `settle` to land in your hand, one card at a time;
+// a hand needs `gap` between two plays; a card put on the wrong pile freezes that hand for `fumble`.
+const SPEED_T = { refill:420, settle:300, gap:220, fumble:850, lift:280 };
 const SpeedRules = {
   deal(){
-    const d = shuffle(makeDeck()).map(enc);
-    return { h:[d.splice(0,5), d.splice(0,5)], dr:[d.splice(0,15), d.splice(0,15)], sd:[d.splice(0,6), d.splice(0,6)], c:[[],[]], phase:'count', n:3, winner:null, seq:0 };
+    const d = shuffle(makeDeck()).map(enc), z = () => [0,0,0,0,0];
+    return { h:[d.splice(0,5), d.splice(0,5)], dr:[d.splice(0,15), d.splice(0,15)], sd:[d.splice(0,6), d.splice(0,6)], c:[[],[]],
+      q:[[],[]], ready:[z(),z()], next:[0,0], lock:[0,0], phase:'deal', n:3, winner:null, seq:0 };
   },
-  fits(card, top){ if(top==null) return false; const d = Math.abs(card%13 - top%13); return d===1 || d===12; },
-  target(S, p, i){ const card=S.h[p][i]; if(card==null) return -1; for(const k of [0,1]) if(SpeedRules.fits(card, S.c[k][S.c[k].length-1])) return k; return -1; },
-  anyMove(S, p){ return S.h[p].some((_,i) => SpeedRules.target(S,p,i) >= 0); },
-  play(S, p, i){
-    if(S.phase!=='play') return false;
-    const k = SpeedRules.target(S,p,i); if(k<0) return false;
-    S.c[k].push(S.h[p][i]);
-    if(S.dr[p].length) S.h[p][i] = S.dr[p].pop(); else S.h[p].splice(i,1);
-    if(!S.h[p].length && !S.dr[p].length){ S.phase='over'; S.winner=p; }
-    return true;
+  fits(card, top){ if(card==null || top==null) return false; const d = Math.abs(card%13 - top%13); return d===1 || d===12; },
+  top(S, k){ const p = S.c[k]; return p.length ? p[p.length-1] : null; },
+  anyMove(S, p){ return S.h[p].some(c => c!=null && [0,1].some(k => SpeedRules.fits(c, SpeedRules.top(S,k)))); },
+  pending(S, p){ return S.q[p].length>0 && S.dr[p].length>0; },
+  // Put the card in slot i on centre pile k. 'ok', 'miss' (wrong pile: fumble) or 'busy' (hand not ready yet).
+  play(S, p, i, k, now){
+    if(S.phase!=='play' || (k!==0 && k!==1)) return 'busy';
+    const card = S.h[p][i];
+    if(card==null || now < S.ready[p][i] || now < S.lock[p] || now < S.next[p]) return 'busy';
+    if(!SpeedRules.fits(card, SpeedRules.top(S,k))){ S.lock[p] = now + SPEED_T.fumble; return 'miss'; }
+    S.c[k].push(card); S.h[p][i] = null; S.q[p].push(i); S.next[p] = now + SPEED_T.gap;
+    if(S.h[p].every(c => c==null) && !S.dr[p].length){ S.phase='over'; S.winner=p; }
+    return 'ok';
+  },
+  // Pick up one card from the draw pile into the oldest empty slot.
+  refill(S, p, now){
+    if(!SpeedRules.pending(S,p)) return false;
+    const i = S.q[p].shift(); S.h[p][i] = S.dr[p].pop(); S.ready[p][i] = now + SPEED_T.settle; return true;
   },
   flip(S){
     if(!S.sd[0].length && !S.sd[1].length){
       const pool = shuffle([...S.c[0].slice(0,-1), ...S.c[1].slice(0,-1)]);
       S.c = S.c.map(p => p.slice(-1));
       if(!pool.length){ // nothing left to flip: fewest cards remaining wins
-        const left = p => S.h[p].length + S.dr[p].length;
+        const left = p => S.h[p].filter(c => c!=null).length + S.dr[p].length;
         S.phase='over'; S.winner = left(0)===left(1) ? -1 : (left(0) < left(1) ? 0 : 1); return;
       }
       const half = Math.ceil(pool.length/2); S.sd = [pool.slice(0,half), pool.slice(half)];
@@ -576,18 +603,27 @@ const SpeedRules = {
     for(const k of [0,1]) if(S.sd[k].length) S.c[k].push(S.sd[k].pop());
   },
   // What a screen needs to draw (also what travels online).
-  view(S){ return { h:S.h, d:S.dr.map(x=>x.length), s:S.sd.map(x=>x.length), t:S.c.map(x=>x.length?x[x.length-1]:null), cn:S.c.map(x=>x.length), ph:S.phase, n:S.n, w:S.winner, seq:S.seq }; }
+  view(S, now){
+    const under = x => x.length>1 ? x[x.length-2] : null;
+    return { h:S.h, d:S.dr.map(x=>x.length), s:S.sd.map(x=>x.length), t:S.c.map(x=>x.length?x[x.length-1]:null), u:S.c.map(under),
+      cn:S.c.map(x=>x.length), ph:S.phase, n:S.n, w:S.winner, seq:S.seq, lk:S.lock.map(t => t > now) };
+  }
 };
 
 function Speed(root, ui){
   const wrap = h('div','speed'); root.appendChild(wrap);
-  let mode=null, S=null, timers=[], cpuSpeed=1000, lastTops=[null,null], keyHandler=null;
+  const fx = Motion(wrap);
+  const now = () => performance.now();
+  let mode=null, S=null, timers=[], think=1000, keyHandler=null, view=null;
+  let sel=[null,null], selAt=[0,0], hints=store.get('speed-hints', false), myLock=0;
+  let cpuTimer=null, cpuLift=null; const refillT=[null,null];
   // online state
   let room=null, net=null; // net = {role:'host'|'guest', code, guestPeer, unsubs:[]}
-  let guestView=null;
 
-  const clearTimers = () => { timers.forEach(t => clearTimeout(t)); timers=[]; cpuTimer=null; };
+  const clearTimers = () => { timers.forEach(t => clearTimeout(t)); timers=[]; cpuTimer=null; cpuLift=null; refillT[0]=refillT[1]=null; };
   const later = (fn, ms) => { const t=setTimeout(fn, ms); timers.push(t); return t; };
+  const me = () => mode==='guest' ? 1 : 0;
+  const mine = p => mode==='local' || p===me();
 
   function stop(){
     clearTimers();
@@ -598,14 +634,14 @@ function Speed(root, ui){
   // ----- mode picker -----
   function newGame(){
     if(mode==='cpu' || mode==='local' || (mode==='host' && net && net.guestPeer)) return start(mode);
-    stop(); mode=null; S=null; guestView=null;
+    stop(); mode=null; S=null; view=null;
     wrap.innerHTML='';
     const modes = h('div','sp-modes');
-    const cpu = h('div','mode', `<h3>vs Computer</h3><p>Race a computer opponent. Pick how quick its hands are.</p>`);
+    const cpu = h('div','mode', `<h3>vs Computer</h3><p>Race a computer opponent. It picks up and lays down cards under the same rules you do. Pick how sharp it is.</p>`);
     const row = h('div','row');
-    [['Chill',1500],['Quick',950],['Ruthless',600]].forEach(([t,ms],i) => { const b=h('button','btn'+(i===1?' primary':''), t); b.addEventListener('click',()=>{ cpuSpeed=ms; start('cpu'); }); row.appendChild(b); });
+    [['Chill',1450],['Quick',950],['Ruthless',560]].forEach(([t,ms],i) => { const b=h('button','btn'+(i===1?' primary':''), t); b.addEventListener('click',()=>{ think=ms; start('cpu'); }); row.appendChild(b); });
     cpu.appendChild(row);
-    const local = h('div','mode alt', `<h3>Two players, one screen</h3><p>Lay a phone or tablet flat between you. The top hand is upside down for the player across the table.</p>`);
+    const local = h('div','mode alt', `<h3>Two players, one screen</h3><p>Lay a phone or tablet flat between you. The top hand is upside down for the player across the table. Both of you drag at once.</p>`);
     const lb = h('button','btn hot','Start face-off'); lb.addEventListener('click',()=>start('local')); local.appendChild(lb);
     const online = h('div','mode dark', `<h3>Online with a friend</h3><p>One of you hosts and gets a code. The other opens this page, picks Speed, and joins with it.</p>`);
     const orow = h('div','row');
@@ -625,113 +661,214 @@ function Speed(root, ui){
 
   // ----- local + host game loop -----
   function start(m){
-    clearTimers(); mode=m; S=SpeedRules.deal(); lastTops=[null,null];
-    bindKeys(); countdown();
+    clearTimers(); mode=m; S=SpeedRules.deal(); sel=[null,null]; myLock=0; view=null; fx.reset();
+    wrap.innerHTML=''; bindKeys();
+    fx.deal(75); changed();              // each player picks up five from their own pile
+    later(countdown, 10*75 + 700);
   }
   function countdown(){
     S.phase='count'; S.n=3; changed();
-    const tick = () => { S.n--; if(S.n>0){ changed(); later(tick, 700); } else { SpeedRules.flip(S); S.phase='play'; changed(); } };
-    later(tick, 700);
+    const tick = () => { S.n--; if(S.n>0){ changed(); later(tick, 650); } else { SpeedRules.flip(S); S.phase='play'; changed(); } };
+    later(tick, 650);
   }
   function changed(){
     S.seq++;
-    if(S.phase==='play' && !SpeedRules.anyMove(S,0) && !SpeedRules.anyMove(S,1)){
-      S.phase='stuck';
-      later(() => { SpeedRules.flip(S); if(S.phase!=='over') S.phase='play'; changed(); }, 1100);
+    if(S.phase==='play' && !SpeedRules.anyMove(S,0) && !SpeedRules.anyMove(S,1) && !SpeedRules.pending(S,0) && !SpeedRules.pending(S,1)){
+      S.phase='stuck'; cpuLift=null;
+      later(() => { if(!S || S.phase!=='stuck') return; SpeedRules.flip(S); if(S.phase!=='over') S.phase='play'; changed(); }, 1300);
     }
-    render(SpeedRules.view(S), 0);
-    if(net && net.role==='host' && net.room) net.room.emit('state', SpeedRules.view(S)).catch(()=>{});
+    view = SpeedRules.view(S, now()); draw();
+    if(net && net.role==='host' && net.room) net.room.emit('state', view).catch(()=>{});
     if(mode==='cpu' && S.phase==='play') scheduleCpu();
   }
-  let cpuTimer=null;
-  function scheduleCpu(){
-    if(cpuTimer) return;
-    cpuTimer = later(() => {
-      cpuTimer=null;
-      if(!S || S.phase!=='play' || mode!=='cpu') return;
-      const opts = S.h[1].map((_,i)=>i).filter(i => SpeedRules.target(S,1,i)>=0);
-      if(opts.length){ SpeedRules.play(S,1,opts[Math.floor(Math.random()*opts.length)]); changed(); }
-      else scheduleCpu();
-    }, cpuSpeed*(0.65 + Math.random()*0.7));
+  function scheduleRefill(p){
+    if(refillT[p] || !SpeedRules.pending(S,p)) return;
+    refillT[p] = later(() => {
+      refillT[p] = null;
+      if(!S || S.phase==='over') return;
+      if(SpeedRules.refill(S, p, now())) changed();
+      scheduleRefill(p);
+    }, SPEED_T.refill);
   }
-  function act(p, i, el){
-    if(mode==='guest'){ if(net && net.room) net.room.emit('act', {i}).catch(()=>{}); return; }
-    if(!S || S.phase!=='play') return;
-    if(SpeedRules.play(S,p,i)) changed();
-    else if(el){ el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); }
+  // A move by p (on this device, or the guest's move arriving at the host).
+  function apply(p, i, k){
+    const r = SpeedRules.play(S, p, i, k, now());
+    if(r==='ok'){ scheduleRefill(p); changed(); }
+    else if(r==='miss'){ changed(); later(() => S && S.phase!=='over' && changed(), SPEED_T.fumble + 20); }
+    return r;
+  }
+
+  // ----- the computer: looks, reaches for a card, then lays it down -----
+  function scheduleCpu(ms){
+    if(cpuTimer || cpuLift) return;
+    cpuTimer = later(cpuLook, ms != null ? ms : think*(0.75 + Math.random()*0.5));
+  }
+  function cpuLook(){
+    cpuTimer=null;
+    if(!S || S.phase!=='play' || mode!=='cpu') return;
+    const t=now(), wait=Math.max(S.lock[1], S.next[1]) - t;
+    if(wait>0) return scheduleCpu(wait + 150);
+    const opts=[];
+    S.h[1].forEach((c,i) => { if(c==null || t<S.ready[1][i]) return; [0,1].forEach(k => { if(SpeedRules.fits(c, SpeedRules.top(S,k))) opts.push([i,k]); }); });
+    if(!opts.length) return scheduleCpu(think*0.45);
+    const [i,k] = opts[Math.floor(Math.random()*opts.length)];
+    cpuLift = {i,k}; draw();
+    later(() => {
+      if(!cpuLift) return; cpuLift=null;
+      if(!S || S.phase!=='play') return draw();
+      apply(1, i, k);       // if you beat it to that pile, the computer fumbles too
+    }, SPEED_T.lift);
+  }
+
+  // ----- your hands -----
+  function pick(p, i){
+    if(!view || view.ph!=='play' || view.h[p][i]==null) return;
+    sel[p] = sel[p]===i ? null : i; selAt[p] = now(); draw();
+  }
+  function tapPile(k){
+    const who = [0,1].filter(p => mine(p) && sel[p]!=null).sort((a,b) => selAt[b]-selAt[a])[0];
+    if(who!=null) place(who, sel[who], k);
+  }
+  function place(p, i, k){
+    if(!view || view.ph!=='play') return false;
+    const card = view.h[p][i]; if(card==null) return false;
+    if(mode==='guest'){
+      if(myLock > now()) return false;
+      if(net && net.room) net.room.emit('act', {i,k}).catch(()=>{});
+      if(!SpeedRules.fits(card, view.t[k])){ fumbled(p, card); myLock = now()+SPEED_T.fumble; later(draw, SPEED_T.fumble+20); return false; }
+      // Show the move straight away; the host's next state confirms it.
+      const v = JSON.parse(JSON.stringify(view)); v.h[p][i]=null; v.u[k]=v.t[k]; v.t[k]=card; v.cn[k]++; view=v; sel[p]=null; draw(); return true;
+    }
+    const r = apply(p, i, k);
+    if(r!=='busy') sel[p] = null;
+    if(r==='ok'){ draw(); return true; }
+    if(r==='miss') fumbled(p, card);
+    return false;
+  }
+  function fumbled(p, card){
+    draw();
+    const el = wrap.querySelector(`[data-cid="n${card}"]`);
+    if(el){ el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); }
   }
   function bindKeys(){
     if(keyHandler) return;
     keyHandler = e => {
       if(e.target && e.target.tagName==='INPUT') return;
-      const k='1234567890'.indexOf(e.key); if(k<0) return;
-      if(k<5) act(mode==='guest'?1:0, k, wrap.querySelectorAll('.sp-side.me .card')[k]);
-      else if(mode==='local') act(1, k-5, wrap.querySelectorAll('.sp-side.top .card')[k-5]);
+      if(e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key.toLowerCase(), n = '1234567890'.indexOf(key), p = me();
+      const put = (who, k) => { if(sel[who]!=null){ e.preventDefault(); place(who, sel[who], k); } };
+      if(n>=0 && n<5) pick(p, n);
+      else if(n>=5 && mode==='local') pick(1, n-5);
+      else if(key==='arrowleft' || key==='a') put(p, 0);
+      else if(key==='arrowright' || key==='d') put(p, 1);
+      else if(mode==='local' && key==='j') put(1, 0);
+      else if(mode==='local' && key==='l') put(1, 1);
     };
     window.addEventListener('keydown', keyHandler);
   }
 
   // ----- drawing -----
+  const draw = () => fx.run(() => render(view, me()));
   function render(v, me){
-    const opp = 1-me;
     wrap.innerHTML='';
+    if(!v) return;
     if(v.ph==='over') return renderOver(v, me);
-    const live = (p) => v.ph==='play' ? v.h[p].map(c => [0,1].some(k => v.t[k]!=null && SpeedRules.fits(c, v.t[k]))) : [];
-    const handRow = (p, interactive) => {
-      const row = h('div','sp-hand'); const lv = live(p);
+    const opp = 1-me, t = now();
+    const locked = p => (v.lk && v.lk[p]) || (p===me && mode==='guest' && myLock > t);
+    const fitsNow = c => v.ph==='play' && [0,1].some(k => SpeedRules.fits(c, v.t[k]));
+    const left = p => v.h[p].filter(c => c!=null).length + v.d[p];
+    const drawPile = p => {
+      const d = h('div','sp-draw'); d.dataset.anchor = 'd'+p;
+      d.append(v.d[p] ? cardEl({}, false) : h('div','slot'), h('span','n', `${v.d[p]}`));
+      d.title = 'Draw pile'; return d;
+    };
+    const handRow = p => {
+      const row = h('div','sp-hand' + (locked(p) ? ' fumble' : ''));
       for(let i=0;i<5;i++){
         const c = v.h[p][i];
-        if(c==null){ row.appendChild(h('div','slot')); continue; }
-        const el = cardEl(dec(c));
-        if(interactive){ if(lv[i]) el.classList.add('live'); el.setAttribute('role','button'); el.addEventListener('pointerdown', e => { e.preventDefault(); act(p, i, el); }); }
+        if(c==null){ row.appendChild(h('div','slot gap')); continue; }
+        const el = cardEl(dec(c)); el.dataset.from = 'd'+p; el.dataset.order = i*2 + p;
+        if(hints && fitsNow(c)) el.classList.add('live');
+        if(sel[p]===i) el.classList.add('sel');
+        el.setAttribute('role','button');
+        dragCard(el, { can: () => !!view && view.ph==='play', tap: () => pick(p, i), drop: k => place(p, i, +k) });
         row.appendChild(el);
       }
       return row;
     };
-    const left = p => v.h[p].length + v.d[p];
-    // Top: opponent (upside-down hand in local mode, card backs otherwise)
+    // Top: the other player (upside-down hand in local mode, card backs otherwise)
     if(mode==='local'){
       const top = h('div','sp-side top flip');
-      top.append(handRow(opp, true), h('div','sp-meta', `<span class="pill">Player 2 · ${left(opp)} left</span><kbd>keys 6–0</kbd>`));
+      const meta = h('div','sp-meta'); meta.append(drawPile(opp), h('span','pill', `Player 2 · ${left(opp)} left`), h('kbd', null, '6–0, then J / L'));
+      top.append(handRow(opp), meta);
       wrap.appendChild(top);
     } else {
       const top = h('div','sp-side');
-      const o = h('div','sp-opp'); for(let i=0;i<v.h[opp].length;i++) o.appendChild(cardEl({}, false));
-      if(!v.h[opp].length) o.appendChild(h('div','slot'));
+      const o = h('div','sp-opp');
+      for(let i=0;i<5;i++){
+        const c = v.h[opp][i];
+        if(c==null){ o.appendChild(h('div','slot gap')); continue; }
+        const el = cardEl(dec(c), false); el.dataset.from = 'd'+opp; el.dataset.order = i*2 + opp;
+        if(cpuLift && cpuLift.i===i) el.classList.add('reach');
+        o.appendChild(el);
+      }
       const who = mode==='cpu' ? 'Computer' : 'Friend';
-      top.append(h('div','sp-meta', `<span class="pill">${who} · ${left(opp)} left</span>`), o);
+      const meta = h('div','sp-meta'); meta.append(drawPile(opp), h('span','pill', `${who} · ${left(opp)} left`));
+      if(locked(opp)) meta.appendChild(h('span','pill bad','Fumbled'));
+      top.append(meta, o);
       wrap.appendChild(top);
     }
     // Centre row: side, centre, centre, side
-    const centre = h('div','sp-center');
-    const side = k => { const p=h('div','sp-pile'); p.append(v.s[k] ? cardEl({},false) : h('div','slot'), h('div','n', `${v.s[k]} spare`)); return p; };
+    const centreRow = h('div','sp-center');
+    const side = k => { const p=h('div','sp-pile side'); p.dataset.anchor = 's'+k; p.append(v.s[k] ? cardEl({},false) : h('div','slot'), h('div','n', `${v.s[k]} spare`)); return p; };
+    const tilt = c => ((c*37)%9 - 4) * 0.9;
     const pile = k => {
-      const p=h('div','sp-pile center');
-      const el = v.t[k]!=null ? cardEl(dec(v.t[k])) : h('div','slot','?');
-      if(v.t[k]!==lastTops[k] && v.t[k]!=null) el.classList.add('land');
-      p.append(el, h('div','n', `${v.cn[k]} played`)); return p;
+      const p = h('div','sp-pile center'); p.dataset.drop = k;
+      const stack = h('div','sp-stack');
+      if(v.u && v.u[k]!=null){ const u = cardEl(dec(v.u[k])); u.classList.add('under'); u.style.rotate = `${tilt(v.u[k])}deg`; stack.appendChild(u); }
+      if(v.t[k]!=null){ const el = cardEl(dec(v.t[k])); el.dataset.from = 's'+k; el.style.rotate = `${tilt(v.t[k])}deg`; stack.appendChild(el); }
+      else stack.appendChild(h('div','slot','?'));
+      p.append(stack, h('div','n', `${v.cn[k]} played`));
+      p.addEventListener('click', () => tapPile(k));
+      p.setAttribute('aria-label', `${k ? 'Right' : 'Left'} centre pile`);
+      return p;
     };
-    centre.append(side(0), pile(0), pile(1), side(1));
-    lastTops = v.t.slice();
-    wrap.appendChild(centre);
+    centreRow.append(side(0), pile(0), pile(1), side(1));
+    wrap.appendChild(centreRow);
     // Bottom: me
     const bottom = h('div','sp-side me');
-    bottom.append(handRow(me, true), h('div','sp-meta', `<span class="pill">${mode==='local'?'Player 1':'You'} · ${left(me)} left</span><kbd>keys 1–5</kbd>`));
+    const meta = h('div','sp-meta');
+    meta.append(drawPile(me), h('span','pill', `${mode==='local'?'Player 1':'You'} · ${left(me)} left`));
+    if(locked(me) && mode!=='local') meta.appendChild(h('span','pill bad','Fumbled'));
+    const hb = h('button','hint-toggle' + (hints ? ' on' : ''), hints ? 'Hints on' : 'Hints off');
+    hb.title = 'Glow cards that can be played'; hb.setAttribute('aria-pressed', hints);
+    hb.addEventListener('click', () => { hints=!hints; store.set('speed-hints', hints); draw(); });
+    meta.append(hb, h('kbd', null, mode==='local' ? '1–5, then A / D' : '1–5, then ← / →'));
+    bottom.append(handRow(me), meta);
     wrap.appendChild(bottom);
     // Banners
     if(v.ph==='count'){ const b=h('div','sp-banner'); b.innerHTML=`<span>${v.n}</span>`; wrap.appendChild(b); }
     if(v.ph==='stuck'){ const b=h('div','sp-banner small'); b.innerHTML='<span>Stuck! Flip</span>'; wrap.appendChild(b); }
     if(v.ph==='wait'){ const b=h('div','sp-banner small'); b.innerHTML='<span>Paused</span>'; wrap.appendChild(b); }
-    const st = { count:'Get ready…', play: mode==='local' ? 'Go! Tap a glowing card to play it.' : 'Go! Tap any glowing card to slap it down.', stuck:'Nobody can move. Flipping the spares…', wait: net && net.role==='host' ? 'Your friend left the table.' : 'The host left the table.' }[v.ph] || '';
+    const anySel = [0,1].some(p => mine(p) && sel[p]!=null);
+    const st = {
+      deal: 'Picking up your five…',
+      count: 'Get ready…',
+      play: locked(me) && mode!=='local' ? '<span class="lose">Wrong pile. Your hand is frozen for a moment.</span>'
+        : anySel ? 'Now tap the pile it goes on.' : 'Go! Drag a card onto a pile, or tap a card and then the pile.',
+      stuck: 'Nobody can move. Flipping the spares…',
+      wait: net && net.role==='host' ? 'Your friend left the table.' : 'The host left the table.'
+    }[v.ph] || '';
     ui.status(`${st}${net ? ` <span class="label" style="margin-left:auto">Table ${net.code}</span>` : ''}`);
   }
+  const cardsLeft = (v, p) => v.h[p].filter(c => c!=null).length + v.d[p];
   function renderOver(v, me){
     const box = h('div','sp-over');
     let title, line;
     if(v.w===-1){ title='Draw'; line='No cards left to flip and you finished level.'; }
     else if(mode==='local'){ title=`Player ${v.w===0?1:2} wins`; line='Every card played. Run it back?'; }
-    else if(v.w===me){ title='You win'; line = mode==='cpu' ? 'Faster than the machine.' : 'You emptied your hand first.'; }
-    else { title = mode==='cpu' ? 'Computer wins' : 'Friend wins'; line='So close. Again?'; }
+    else if(v.w===me){ title='You win'; line = (mode==='cpu' ? 'Faster than the machine.' : 'You emptied your hand first.') + ` They still had ${cardsLeft(v, 1-me)} to go.`; }
+    else { title = mode==='cpu' ? 'Computer wins' : 'Friend wins'; line=`So close: you had ${cardsLeft(v, me)} left. Again?`; }
     box.innerHTML = `<h3>${title}</h3><p>${line}</p>`;
     const row = h('div','controls');
     if(mode!=='guest'){ const again=h('button','btn primary big','Rematch'); again.addEventListener('click',()=>start(mode)); row.appendChild(again); }
@@ -756,21 +893,20 @@ function Speed(root, ui){
     wrap.innerHTML=''; const box=h('div','sp-over');
     box.innerHTML=`<p class="label" style="color:#3b3546">Your table code</p><div class="code">${code}</div><p>Tell your friend to open this page, choose Speed, then join with this code. The game starts as soon as they arrive.</p>`;
     wrap.appendChild(box); ui.status('Waiting for your friend…');
-    const begin = () => { mode='host'; S=SpeedRules.deal(); lastTops=[null,null]; bindKeys(); countdown(); mode='host'; };
     net.unsubs.push(r.onPeers(ch => {
       const others = ch.peers.filter(p => !p.sameTab && p.kind==='viewer');
-      if(!net.guestPeer && others.length){ net.guestPeer = others[0].peer; begin(); }
+      if(!net.guestPeer && others.length){ net.guestPeer = others[0].peer; start('host'); }
       else if(net.guestPeer && ch.left.some(p => p.peer===net.guestPeer)){
-        net.guestPeer=null; clearTimers(); if(S && S.phase!=='over'){ S.phase='wait'; render(SpeedRules.view(S),0); }
+        net.guestPeer=null; clearTimers(); if(S && S.phase!=='over'){ S.phase='wait'; view=SpeedRules.view(S, now()); draw(); }
         ui.status('Your friend left. The game starts again when someone joins with code ' + code + '.');
       }
     }));
     net.unsubs.push(r.on('act', msg => {
       if(msg.sameTab || msg.peer!==net.guestPeer || !S || S.phase!=='play') return;
-      const i = msg.data && Number.isInteger(msg.data.i) ? msg.data.i : -1;
-      if(i>=0 && i<5 && SpeedRules.play(S,1,i)) changed();
+      const d = msg.data || {}, i = Number.isInteger(d.i) ? d.i : -1, k = d.k;
+      if(i>=0 && i<5 && (k===0 || k===1)) apply(1, i, k);
     }));
-    net.unsubs.push(r.on('hello', msg => { if(!msg.sameTab && S) r.emit('state', SpeedRules.view(S)).catch(()=>{}); }));
+    net.unsubs.push(r.on('hello', msg => { if(!msg.sameTab && S) r.emit('state', SpeedRules.view(S, now())).catch(()=>{}); }));
   }
   async function joinGame(raw){
     const code = String(raw||'').trim().toUpperCase().replace(/[^A-Z]/g,'');
@@ -778,26 +914,31 @@ function Speed(root, ui){
     room = room || await getRoom(); if(!room) return;
     ui.status('Looking for table ' + code + '…');
     let r; try{ r = await room.join('speed-' + code.toLowerCase(), {role:'guest'}); }catch(e){ ui.status('Could not reach that table. Check the code, and make sure your friend is still on the code screen.'); return; }
-    stop(); mode='guest'; net={role:'guest', code, room:r, unsubs:[]}; lastTops=[null,null]; bindKeys();
+    stop(); mode='guest'; net={role:'guest', code, room:r, unsubs:[]}; view=null; sel=[null,null]; bindKeys();
     wrap.innerHTML=''; const box=h('div','sp-over'); box.innerHTML=`<div class="code">${code}</div><p>Joined. Waiting for the host to deal…</p>`; wrap.appendChild(box);
     ui.status('Connecting to table ' + code + '…');
     let lastSeq=-1, hostPeer=null;
     net.unsubs.push(r.on('state', msg => {
       if(msg.sameTab) return; const v = msg.data; if(!validView(v)) return;
       if(hostPeer && msg.peer!==hostPeer) return; hostPeer = msg.peer;
-      if(v.seq < lastSeq && v.ph!=='count') return; lastSeq = v.seq;
-      guestView = v; render(v, 1);
+      if(v.seq < lastSeq && v.ph!=='deal') return;
+      if(v.ph==='deal' && lastSeq>v.seq){ sel=[null,null]; myLock=0; fx.deal(75); }
+      else if(!view && v.ph==='deal') fx.deal(75);
+      lastSeq = v.seq;
+      if(sel[1]!=null && v.h[1][sel[1]]==null) sel[1]=null;
+      view = v; draw();
     }));
     net.unsubs.push(r.onPeers(ch => {
-      if(hostPeer && ch.left.some(p => p.peer===hostPeer) && guestView){ guestView = {...guestView, ph:'wait'}; render(guestView,1); }
+      if(hostPeer && ch.left.some(p => p.peer===hostPeer) && view){ view = {...view, ph:'wait'}; draw(); }
     }));
     r.emit('hello', {}).catch(()=>{});
   }
   function validView(v){
     const okCard = c => Number.isInteger(c) && c>=0 && c<52;
-    return v && Array.isArray(v.h) && v.h.length===2 && v.h.every(x => Array.isArray(x) && x.length<=5 && x.every(okCard))
-      && Array.isArray(v.t) && v.t.every(c => c===null || okCard(c)) && Array.isArray(v.d) && Array.isArray(v.s) && Array.isArray(v.cn)
-      && ['count','play','stuck','over','wait'].includes(v.ph) && Number.isInteger(v.seq);
+    return v && Array.isArray(v.h) && v.h.length===2 && v.h.every(x => Array.isArray(x) && x.length===5 && x.every(c => c===null || okCard(c)))
+      && Array.isArray(v.t) && v.t.every(c => c===null || okCard(c)) && Array.isArray(v.u) && v.u.every(c => c===null || okCard(c))
+      && Array.isArray(v.d) && Array.isArray(v.s) && Array.isArray(v.cn)
+      && ['deal','count','play','stuck','over','wait'].includes(v.ph) && Number.isInteger(v.seq);
   }
   return { newGame, stop };
 }
