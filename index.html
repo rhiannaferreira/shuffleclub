@@ -1449,6 +1449,8 @@ function equity(hole, board, opp, sims = 140){
 
 function Holdem(root, ui){
   const wrap = h('div','pk'); root.appendChild(wrap);
+  const fx = Motion(wrap);
+  let dealing = false;
   const SEATS = [['You',0],['Mags',0.8],['Dutch',1.4],['Lou',0.5]];
   const SB=10, BB=20, START=1000;
   let P, dealer, deck, board, street, curBet, minRaise, turn, over, timer, raiseTo, result, handNo, busted;
@@ -1469,14 +1471,16 @@ function Holdem(root, ui){
     if(P[0].out){ busted=true; return render(); }
     if(P.filter(p=>!p.out).length<2) return render();
     handNo++; dealer = nextIdx(dealer, p=>!p.out);
-    deck = shuffle(makeDeck()); deck.forEach(c=>c.up=true); board=[]; street=0; over=false; result='';
+    deck = shuffle(makeDeck()); deck.forEach(c=>c.up=true); board=[]; street=0; over=false; result=''; raiseTo=null;
     P.forEach(p => { if(!p.out) p.hole=[deck.pop(), deck.pop()]; });
     const heads = P.filter(p=>!p.out).length===2;
     const sb = heads ? dealer : nextIdx(dealer, p=>!p.out), bb = nextIdx(sb, p=>!p.out);
     post(sb, SB, 'Small blind'); post(bb, BB, 'Big blind');
     curBet=BB; minRaise=BB;
     turn = nextIdx(bb, needsAct);
-    proceed();
+    // Last hand's cards go back to the deck, then two each come out around the table.
+    dealing = true; fx.sweep('deck'); fx.deal(85); render();
+    later(() => { dealing = false; proceed(); }, fx.left() + 200);
   }
   function post(i, amt, label){ const p=P[i]; const a=Math.min(amt,p.chips); p.chips-=a; p.bet+=a; p.total+=a; if(!p.chips) p.allin=true; p.last=label; }
   function act(i, type, to){
@@ -1511,7 +1515,8 @@ function Holdem(root, ui){
     else return showdown();
     turn = nextIdx(dealer, needsAct);
     if(P.filter(canAct).length<2) turn=-1;
-    proceed();
+    dealing = true; fx.deal(140); render();
+    later(() => { dealing = false; proceed(); }, fx.left() + 150);
   }
   function showdown(){
     const inHand = P.filter(p=>!p.out && !p.folded);
@@ -1549,18 +1554,21 @@ function Holdem(root, ui){
 
   // ---- drawing ----
   function seatEl(p, i){
-    const s = h('div','pk-seat' + (i===turn && !over ? ' turn':'') + (p.folded&&!p.out ? ' folded':'') + (p.out ? ' out':'') + (p.won ? ' won':''));
+    const s = h('div','pk-seat' + (i===turn && !over && !dealing ? ' turn':'') + (p.folded&&!p.out ? ' folded':'') + (p.out ? ' out':'') + (p.won ? ' won':''));
     const cards = h('div','pk-hole');
     const show = over && street===4 && !p.folded;
-    p.hole.forEach(c => cards.appendChild(cardEl(c, show)));
+    p.hole.forEach((c,k) => cards.appendChild(dealt(cardEl(c, show), i, k)));
     if(!p.hole.length) cards.appendChild(h('div','slot'));
     s.append(h('div','pk-name', `${p.name}${i===dealer?' <span class="dbtn" title="Dealer">D</span>':''}`), cards,
       h('div','pk-chips', p.out ? 'Out' : `${p.chips}`),
-      h('div','pk-act', p.won ? `+${p.won}` : (p.last || (i===turn && !over ? 'Thinking…' : '&nbsp;'))));
+      h('div','pk-act', p.won ? `+${p.won}` : (p.last || (i===turn && !over && !dealing ? 'Thinking…' : '&nbsp;'))));
     if(show && p.score) s.appendChild(h('div','pk-hn', handName(p.score)));
     return s;
   }
-  function render(){
+  // Hole cards leave the deck in table order: one each starting left of the button, then a second round.
+  const dealt = (el, i, k) => { el.dataset.from='deck'; el.dataset.order = k*P.length + (i - dealer - 1 + P.length) % P.length; return el; };
+  const render = () => fx.run(paint);
+  function paint(){
     wrap.innerHTML='';
     if(busted || P.filter(p=>!p.out).length<2){
       const box = h('div','sp-over');
@@ -1571,20 +1579,23 @@ function Holdem(root, ui){
     }
     const opps = h('div','pk-opps'); [1,2,3].forEach(i => opps.appendChild(seatEl(P[i], i))); wrap.appendChild(opps);
     const mid = h('div','pk-mid');
-    const bd = h('div','pk-board'); for(let k=0;k<5;k++) bd.appendChild(board[k] ? cardEl(board[k]) : h('div','slot'));
-    mid.append(h('div','pk-pot', `<span class="label">Pot</span><strong>${pot()}</strong>`), bd);
+    const bd = h('div','pk-board'); for(let k=0;k<5;k++){ const el = board[k] ? cardEl(board[k]) : h('div','slot'); el.dataset.from='deck'; bd.appendChild(el); }
+    const pt = h('div','pk-pot', `<span class="label">Pot</span><strong>${pot()}</strong>`); pt.dataset.anchor='deck'; pt.dataset.point='';
+    mid.append(pt, bd);
     wrap.appendChild(mid);
     // you
     const me = P[0];
     const you = h('div','pk-you' + (turn===0 && !over ? ' turn':'') + (me.folded ? ' folded':''));
-    const hole = h('div','pk-hole big'); me.hole.forEach(c => hole.appendChild(cardEl(c, true)));
+    const hole = h('div','pk-hole big'); me.hole.forEach((c,k) => hole.appendChild(dealt(cardEl(c, true), 0, k)));
     const cur = me.hole.length && board.length>=3 ? handName(best7([...me.hole, ...board])) : (me.hole.length===2 ? (hv(me.hole[0])===hv(me.hole[1]) ? `Pocket ${RANK_WORD[hv(me.hole[0])].toLowerCase()}` : `${rankLabel(me.hole[0].r)}-${rankLabel(me.hole[1].r)}${me.hole[0].s===me.hole[1].s?' suited':''}`) : '');
     const info = h('div','pk-info', `<div class="pk-name">You${dealer===0?' <span class="dbtn">D</span>':''}</div><div class="pk-stack">${me.chips}</div><div class="pk-act">${me.won?`+${me.won}`:(me.last||'&nbsp;')}</div><div class="pk-hn">${cur}</div>`);
     you.append(hole, info); wrap.appendChild(you);
     // controls
     const ctr = h('div','pk-ctrl');
     if(over){
-      const b=h('button','btn primary big','Next hand'); b.addEventListener('click', newHand); ctr.appendChild(b);
+      const b=h('button','btn primary big','Next hand'); b.addEventListener('click', () => { if(over) newHand(); }); ctr.appendChild(b);
+    } else if(dealing){
+      ctr.appendChild(h('div','label','Dealing…'));
     } else if(turn===0){
       const need = curBet-me.bet, maxTo = me.bet+me.chips;
       const minTo = Math.min(maxTo, curBet + minRaise);
